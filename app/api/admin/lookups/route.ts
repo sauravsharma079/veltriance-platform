@@ -1,72 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 
-async function getOrgAndProfile() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+async function getCtx() {
+  const sb = await createClient();
+  const { data: { user } } = await sb.auth.getUser();
   if (!user) return null;
-  const [profile, organization] = await Promise.all([
+  const [profile, org] = await Promise.all([
     prisma.user.findUnique({ where: { authId: user.id } }),
     getCurrentOrganization(),
   ]);
-  if (!profile || !organization || profile.organizationId !== organization.id) return null;
-  return { profile, organization };
+  if (!profile || !org) return null;
+  return { profile, org };
 }
 
-// GET — any authenticated user can read lookups (needed for intake forms)
-export async function GET(req: NextRequest) {
-  const ctx = await getOrgAndProfile();
-  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const type = req.nextUrl.searchParams.get("type");
-  const [lookups, coaSegments, coas] = await Promise.all([
-    prisma.lookup.findMany({
-      where: {
-        organizationId: ctx.organization.id,
-        active: true,
-        ...(type ? { type } : {}),
-      },
-      orderBy: [{ type: "asc" }, { sortOrder: "asc" }, { label: "asc" }],
-    }),
-    prisma.coaSegment.findMany({
-      where: { chartOfAccount: { organizationId: ctx.organization.id } },
-      include: { chartOfAccount: { select: { name: true, code: true } } },
-      orderBy: [{ chartOfAccountId: "asc" }, { position: "asc" }],
-    }),
-    prisma.chartOfAccount.findMany({
-      where: { organizationId: ctx.organization.id, isActive: true },
-      select: { id: true, name: true, code: true },
-      orderBy: { name: "asc" },
-    }),
-  ]);
-
-  return NextResponse.json({ lookups, coaSegments, coas });
+export async function GET() {
+  try {
+    const ctx = await getCtx();
+    if (!ctx) return NextResponse.json({ lookups: [] });
+    const lookups = await prisma.lookup.findMany({
+      where: { organizationId: ctx.org.id },
+      orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }],
+    });
+    return NextResponse.json({ lookups });
+  } catch { return NextResponse.json({ lookups: [] }); }
 }
-
-const lookupSchema = z.object({
-  type: z.string().min(1),
-  code: z.string().min(1),
-  label: z.string().min(1),
-  parentCode: z.string().nullable().optional(),
-  sortOrder: z.number().int().default(0),
-  coaId: z.string().nullable().optional(),
-});
 
 export async function POST(req: NextRequest) {
-  const ctx = await getOrgAndProfile();
-  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (ctx.profile.role !== "ADMIN")
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  try {
+    const ctx = await getCtx();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const body = await req.json();
+    const count = await prisma.lookup.count({ where: { organizationId: ctx.org.id, type: body.type } });
+    const lookup = await prisma.lookup.create({
+      data: {
+        organizationId: ctx.org.id,
+        type: body.type, code: body.code,
+        label: body.label, sortOrder: count + 1,
+      },
+    });
+    return NextResponse.json({ lookup }, { status: 201 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
 
-  const body = await req.json();
-  const parsed = lookupSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
-
-  const lookup = await prisma.lookup.create({
-    data: { ...parsed.data, organizationId: ctx.organization.id },
-  });
-  return NextResponse.json({ lookup }, { status: 201 });
+export async function DELETE(req: NextRequest) {
+  try {
+    const ctx = await getCtx();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { id } = await req.json();
+    await prisma.lookup.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
 }

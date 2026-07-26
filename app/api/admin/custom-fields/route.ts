@@ -1,57 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 
-async function requireAdmin() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+async function getCtx() {
+  const sb = await createClient();
+  const { data: { user } } = await sb.auth.getUser();
   if (!user) return null;
-  const [profile, organization] = await Promise.all([
+  const [profile, org] = await Promise.all([
     prisma.user.findUnique({ where: { authId: user.id } }),
     getCurrentOrganization(),
   ]);
-  if (!profile || !organization || profile.organizationId !== organization.id || profile.role !== "ADMIN") return null;
-  return { profile, organization };
+  if (!profile || !org) return null;
+  return { profile, org };
 }
 
-export async function GET(req: NextRequest) {
-  const ctx = await requireAdmin();
-  if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const entity = req.nextUrl.searchParams.get("entity");
-  const fields = await prisma.customField.findMany({
-    where: {
-      organizationId: ctx.organization.id,
-      ...(entity ? { entity: entity as never } : {}),
-    },
-    orderBy: [{ entity: "asc" }, { sortOrder: "asc" }],
-  });
-  return NextResponse.json({ fields });
+export async function GET() {
+  try {
+    const ctx = await getCtx();
+    if (!ctx) return NextResponse.json({ fields: [] });
+    const fields = await prisma.customField.findMany({
+      where: { organizationId: ctx.org.id },
+      orderBy: [{ module: 'asc' }, { sortOrder: 'asc' }],
+    });
+    return NextResponse.json({ fields });
+  } catch { return NextResponse.json({ fields: [] }); }
 }
-
-const fieldSchema = z.object({
-  entity: z.enum(["REQUISITION", "SUPPLIER", "PURCHASE_ORDER"]),
-  name: z.string().min(1),
-  fieldKey: z.string().min(1).regex(/^[a-z][a-z0-9_]*$/, "Must be lowercase letters, numbers, underscores"),
-  fieldType: z.enum(["TEXT", "NUMBER", "DATE", "DROPDOWN", "CHECKBOX", "TEXTAREA"]),
-  required: z.boolean().default(false),
-  options: z.array(z.string()).default([]),
-  helpText: z.string().optional(),
-  sortOrder: z.number().int().default(0),
-});
 
 export async function POST(req: NextRequest) {
-  const ctx = await requireAdmin();
-  if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  try {
+    const ctx = await getCtx();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const body = await req.json();
+    const count = await prisma.customField.count({ where: { organizationId: ctx.org.id, module: body.module } });
+    const field = await prisma.customField.create({
+      data: {
+        organizationId: ctx.org.id,
+        module: body.module, fieldName: body.fieldName,
+        label: body.label, fieldType: body.fieldType,
+        required: body.required ?? false,
+        sortOrder: count + 1,
+        placeholder: body.placeholder || null,
+        options: body.options || [],
+      },
+    });
+    return NextResponse.json({ field }, { status: 201 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
 
-  const body = await req.json();
-  const parsed = fieldSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
-
-  const field = await prisma.customField.create({
-    data: { ...parsed.data, organizationId: ctx.organization.id },
-  });
-  return NextResponse.json({ field }, { status: 201 });
+export async function DELETE(req: NextRequest) {
+  try {
+    const ctx = await getCtx();
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { id } = await req.json();
+    await prisma.customField.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
 }
