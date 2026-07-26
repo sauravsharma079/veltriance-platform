@@ -1,7 +1,7 @@
 
 "use client";
 
-import { IntakeBot } from "@/components/IntakeBot";
+import IntakeBot from "@/components/IntakeBot";
 import {
   CheckCircle2, Clock, FileText, Package, ShoppingCart,
   Shield, Zap, ArrowRight,
