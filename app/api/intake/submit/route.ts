@@ -155,6 +155,13 @@ export async function POST(req: NextRequest) {
         deliveryLocation: d.deliveryLocation,
         requiredDate: (() => {
           if (!d.requiredDate) return null;
+          const s = d.requiredDate.toLowerCase().trim();
+          const now = new Date();
+          if (s === "asap" || s === "today") return now;
+          if (s.includes("this week")) { const x=new Date(now); x.setDate(now.getDate()+(5-now.getDay())); return x; }
+          if (s.includes("2 week")||s.includes("two week")) { const x=new Date(now); x.setDate(now.getDate()+14); return x; }
+          if (s.includes("this month")) return new Date(now.getFullYear(), now.getMonth()+1, 0);
+          if (s.includes("next month")) return new Date(now.getFullYear(), now.getMonth()+2, 0);
           const p = new Date(d.requiredDate);
           return isNaN(p.getTime()) ? null : p;
         })(),

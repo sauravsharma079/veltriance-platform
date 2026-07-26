@@ -1,243 +1,38 @@
 "use client";
-
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-
-type PO = {
-  id: string; poNumber: string; status: string; currency: string;
-  subtotal: string; taxAmount: string; totalAmount: string;
-  paymentTerms: string | null; deliveryAddress: string | null;
-  notes: string | null; supplierEmail: string | null;
-  routingMethod: string; issuedAt: string | null; createdAt: string;
-  expectedDelivery: string | null;
-  supplier: { id: string; name: string; contactEmail: string | null; contactName: string | null; addressLine1: string | null; city: string | null; country: string | null } | null;
-  requisition: { requisitionNumber: string; title: string; requestor: { name: string; email: string; department: string | null } | null } | null;
-  createdBy: { name: string; email: string };
-  lineItems: { id: string; description: string; quantity: string; unitPrice: string; lineTotal: string; glAccount: string | null; taxRate: string | null }[];
-};
-
-export default function POPrintPage() {
+type LI = { description:string; quantity:number; unitPrice:number; lineTotal:number; glAccount:string|null; };
+type PO = { id:string; poNumber:string; status:string; currency:string; subtotal:number; totalTax:number; totalAmount:number; deliveryLocation:string|null; requiredDate:string|null; issuedAt:string|null; paymentTerms:string|null; lineItems:LI[]; supplier:{ name:string; code:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null }|null; organization:{ name:string }|null; };
+export default function PrintPage() {
   const { id } = useParams<{ id: string }>();
-  const [po, setPo] = useState<PO | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(() => {
-    fetch(`/api/purchase-orders/${id}`)
-      .then(r => r.json())
-      .then(d => { setPo(d.purchaseOrder); setLoading(false); });
-  }, [id]);
-
-  useEffect(() => { load(); }, [load]);
-
+  const [po, setPo] = useState<PO|null>(null);
+  const [err, setErr] = useState("");
   useEffect(() => {
-    if (!loading && po) {
-      setTimeout(() => window.print(), 300);
-    }
-  }, [loading, po]);
-
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-gray-400 text-sm">Preparing document…</p>
-    </div>
-  );
-  if (!po) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-gray-400 text-sm">Purchase order not found.</p>
-    </div>
-  );
-
-  const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const subtotal = Number(po.subtotal ?? po.totalAmount);
-  const tax = Number(po.taxAmount ?? 0);
-  const total = Number(po.totalAmount);
-
-  return (
-    <>
-      <style>{`
-        @media print {
-          @page { margin: 15mm 15mm; size: A4 portrait; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .no-print { display: none !important; }
-          .page-break { page-break-after: always; }
-        }
-        body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
-      `}</style>
-
-      {/* Print button — hidden when printing */}
-      <div className="no-print fixed top-4 right-4 z-50 flex gap-2">
-        <button onClick={() => window.print()}
-          className="bg-[#1A2A52] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#243766] shadow-lg">
-          ⬇ Download / Print PDF
-        </button>
-        <button onClick={() => window.close()}
-          className="bg-white border border-gray-200 text-gray-600 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 shadow-lg">
-          Close
-        </button>
+    fetch(`/api/purchase-orders/${id}`).then(r=>r.json()).then(d=>{ if(d.purchaseOrder) setPo(d.purchaseOrder); else setErr("Not found"); }).catch(()=>setErr("Failed"));
+  }, [id]);
+  useEffect(() => { if(po) setTimeout(()=>window.print(), 600); }, [po]);
+  const fmt = (n:number) => "₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2});
+  const dt = (d:string|null) => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
+  if(err) return <div style={{padding:40,fontFamily:"Arial",color:"red"}}>{err}</div>;
+  if(!po) return <div style={{padding:40,fontFamily:"Arial",color:"#666",textAlign:"center"}}>Loading PO...</div>;
+  return <>
+    <style>{`@page{size:A4;margin:15mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:white}.page{max-width:780px;margin:0 auto;padding:20px 0}.hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:3px solid #1A2A52;margin-bottom:20px}.brand{font-size:24px;font-weight:900;color:#1A2A52}.brand-sub{font-size:8px;color:#C8A04D;letter-spacing:2px;text-transform:uppercase}.brand-addr{font-size:9px;color:#6b7280;margin-top:8px;line-height:1.6}.por{text-align:right}.pot{font-size:26px;font-weight:900;color:#1A2A52}.pon{font-size:13px;font-weight:700;color:#C8A04D;margin-top:4px}.badge{display:inline-block;padding:3px 12px;border-radius:20px;font-size:9px;font-weight:700;text-transform:uppercase;margin-top:8px;background:#dbeafe;color:#1e40af}.accent{height:4px;background:linear-gradient(90deg,#1A2A52,#C8A04D);border-radius:2px;margin-bottom:20px}.meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}.mb{background:#f8f9fb;border-radius:6px;padding:12px;border-left:3px solid #1A2A52}.lbl{font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}.val{font-size:11px;font-weight:600;color:#111;line-height:1.5}.sub{font-size:9px;color:#6b7280;margin-top:2px;line-height:1.5}.dlv{background:#f8f9fb;border-radius:6px;padding:12px;border-left:3px solid #C8A04D;margin-bottom:16px}.tt{font-size:9px;font-weight:700;color:#1A2A52;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}table{width:100%;border-collapse:collapse;margin-bottom:16px}thead tr{background:#1A2A52}thead th{padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:left}tbody tr:nth-child(even){background:#f9fafb}tbody td{padding:8px 10px;font-size:10px;color:#374151;border-bottom:1px solid #e5e7eb;vertical-align:top}.c{text-align:center}.r{text-align:right;font-family:monospace}.tw{display:flex;justify-content:flex-end;margin-bottom:20px}.tb{width:260px}.tr{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #e5e7eb;font-size:10px}.tr.g{font-weight:700;font-size:12px;color:#1A2A52;border-bottom:2px solid #1A2A52;padding:8px 0 6px}.trm{background:#f0f4ff;border-radius:6px;padding:12px;margin-bottom:20px;border:1px solid #dbeafe}.trm .l2{font-size:8px;font-weight:700;color:#1A2A52;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}.trm p{font-size:9px;color:#374151;line-height:1.7}.sgs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;border-top:2px solid #e5e7eb;padding-top:20px}.sg{text-align:center}.sl{height:40px;border-bottom:1.5px solid #374151;margin-bottom:6px}.sn{font-size:10px;font-weight:600}.sr{font-size:9px;color:#6b7280}.ft{text-align:center;font-size:8.5px;color:#9ca3af;margin-top:16px;padding-top:10px;border-top:1px solid #f3f4f6}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`}</style>
+    <div className="page">
+      <div className="hdr"><div><div className="brand">Veltriance</div><div className="brand-sub">Technologies LLP</div><div className="brand-addr">Procurement Platform<br/>{po.organization?.name||"Ace Technologies India Pvt. Ltd."}<br/>CIN: U72900KA2024PTC000001</div></div><div className="por"><div className="pot">PURCHASE ORDER</div><div className="pon">{po.poNumber}</div><div><span className="badge">{po.status}</span></div></div></div>
+      <div className="accent"/>
+      <div className="meta">
+        <div className="mb"><div className="lbl">Bill To</div><div className="val">{po.organization?.name||"Ace Technologies India"}</div><div className="sub">GSTIN: 29AABCA1234A1Z5<br/>PAN: AABCA1234A</div></div>
+        <div className="mb"><div className="lbl">Supplier</div><div className="val">{po.supplier?.name||"—"}</div><div className="sub">{po.supplier?.code||""}<br/>{po.supplier?.contactEmail||""}<br/>{po.supplier?.contactPhone||""}</div></div>
+        <div className="mb"><div className="lbl">PO Details</div><div className="val">Issued: {dt(po.issuedAt)}</div><div className="sub">Required by: {dt(po.requiredDate)}<br/>Payment: {po.paymentTerms||po.supplier?.paymentTerms||"Net 30"}<br/>Currency: {po.currency||"INR"}</div></div>
       </div>
-
-      {/* PO Document */}
-      <div className="max-w-4xl mx-auto p-10 bg-white min-h-screen">
-
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8 pb-6 border-b-2 border-[#1A2A52]">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="size-10 rounded-xl bg-gradient-to-br from-[#1A2A52] to-[#C8A04D] flex items-center justify-center">
-                <span className="text-white font-bold text-sm">V</span>
-              </div>
-              <div>
-                <p className="text-xl font-bold text-[#1A2A52]">Veltriance</p>
-                <p className="text-xs text-gray-500">Technology · Consulting · Managed Services</p>
-              </div>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-3xl font-bold text-[#1A2A52]">PURCHASE ORDER</p>
-            <p className="text-lg font-semibold text-[#C8A04D] mt-1">{po.poNumber}</p>
-            <p className="text-sm text-gray-500 mt-1">Date: {today}</p>
-            {po.issuedAt && <p className="text-sm text-gray-500">Issued: {new Date(po.issuedAt).toLocaleDateString()}</p>}
-            <span className={`inline-block mt-2 text-xs font-semibold px-3 py-1 rounded-full ${
-              po.status === "SENT" || po.status === "ACKNOWLEDGED" ? "bg-green-100 text-green-700" :
-              po.status === "DRAFT" ? "bg-gray-100 text-gray-600" : "bg-blue-50 text-blue-700"
-            }`}>{po.status.replace(/_/g, " ")}</span>
-          </div>
-        </div>
-
-        {/* Addresses */}
-        <div className="grid grid-cols-2 gap-8 mb-8">
-          <div>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Bill / Ship From</p>
-            <p className="font-semibold text-gray-900">Veltriance Technology Pvt. Ltd.</p>
-            <p className="text-sm text-gray-600 mt-1">Prepared by: {po.createdBy.name}</p>
-            <p className="text-sm text-gray-500">{po.createdBy.email}</p>
-            {po.deliveryAddress && (
-              <>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-4 mb-1">Deliver To</p>
-                <p className="text-sm text-gray-700 whitespace-pre-line">{po.deliveryAddress}</p>
-              </>
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Supplier / Vendor</p>
-            {po.supplier ? (
-              <>
-                <p className="font-semibold text-gray-900">{po.supplier.name}</p>
-                {po.supplier.contactName && <p className="text-sm text-gray-600 mt-1">Attn: {po.supplier.contactName}</p>}
-                {po.supplier.contactEmail && <p className="text-sm text-gray-500">{po.supplier.contactEmail}</p>}
-                {po.supplier.addressLine1 && <p className="text-sm text-gray-600 mt-1">{po.supplier.addressLine1}</p>}
-                {po.supplier.city && <p className="text-sm text-gray-600">{po.supplier.city}{po.supplier.country ? `, ${po.supplier.country}` : ""}</p>}
-              </>
-            ) : (
-              <p className="text-sm text-gray-400 italic">No supplier assigned</p>
-            )}
-          </div>
-        </div>
-
-        {/* PO Details strip */}
-        <div className="bg-[#1A2A52]/5 rounded-xl p-4 mb-6 grid grid-cols-3 gap-4 text-sm">
-          <div>
-            <p className="text-xs text-gray-500 mb-0.5">Payment terms</p>
-            <p className="font-medium text-gray-800">{po.paymentTerms ?? "—"}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 mb-0.5">Currency</p>
-            <p className="font-medium text-gray-800">{po.currency}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 mb-0.5">Expected delivery</p>
-            <p className="font-medium text-gray-800">{po.expectedDelivery ? new Date(po.expectedDelivery).toLocaleDateString() : "—"}</p>
-          </div>
-          {po.requisition && (
-            <>
-              <div>
-                <p className="text-xs text-gray-500 mb-0.5">Requisition ref.</p>
-                <p className="font-medium text-gray-800">{po.requisition.requisitionNumber}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-xs text-gray-500 mb-0.5">Description</p>
-                <p className="font-medium text-gray-800 truncate">{po.requisition.title}</p>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Line items table */}
-        <table className="w-full text-sm mb-6">
-          <thead>
-            <tr className="bg-[#1A2A52] text-white">
-              <th className="px-4 py-2.5 text-left font-semibold rounded-tl-lg">#</th>
-              <th className="px-4 py-2.5 text-left font-semibold">Description</th>
-              <th className="px-4 py-2.5 text-left font-semibold">GL Account</th>
-              <th className="px-4 py-2.5 text-right font-semibold">Qty</th>
-              <th className="px-4 py-2.5 text-right font-semibold">Unit Price</th>
-              <th className="px-4 py-2.5 text-right font-semibold">Tax %</th>
-              <th className="px-4 py-2.5 text-right font-semibold rounded-tr-lg">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {po.lineItems.map((li, i) => (
-              <tr key={li.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
-                <td className="px-4 py-2.5 text-gray-500 border-b border-gray-100">{i + 1}</td>
-                <td className="px-4 py-2.5 text-gray-800 border-b border-gray-100 font-medium">{li.description}</td>
-                <td className="px-4 py-2.5 text-gray-500 border-b border-gray-100 text-xs font-mono">{li.glAccount ?? "—"}</td>
-                <td className="px-4 py-2.5 text-gray-700 border-b border-gray-100 text-right">{li.quantity}</td>
-                <td className="px-4 py-2.5 text-gray-700 border-b border-gray-100 text-right">{po.currency} {Number(li.unitPrice).toLocaleString()}</td>
-                <td className="px-4 py-2.5 text-gray-500 border-b border-gray-100 text-right text-xs">{li.taxRate ? `${(Number(li.taxRate) * 100).toFixed(0)}%` : "0%"}</td>
-                <td className="px-4 py-2.5 text-gray-800 border-b border-gray-100 text-right font-semibold">{po.currency} {Number(li.lineTotal).toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr><td colSpan={6} className="px-4 py-2 text-right text-sm text-gray-500">Subtotal</td><td className="px-4 py-2 text-right text-sm text-gray-700">{po.currency} {subtotal.toLocaleString()}</td></tr>
-            <tr><td colSpan={6} className="px-4 py-2 text-right text-sm text-gray-500">Tax</td><td className="px-4 py-2 text-right text-sm text-gray-700">{po.currency} {tax.toLocaleString()}</td></tr>
-            <tr className="bg-[#1A2A52]/5">
-              <td colSpan={6} className="px-4 py-3 text-right font-bold text-gray-900 text-base rounded-bl-lg">TOTAL</td>
-              <td className="px-4 py-3 text-right font-bold text-[#1A2A52] text-base rounded-br-lg">{po.currency} {total.toLocaleString()}</td>
-            </tr>
-          </tfoot>
-        </table>
-
-        {/* Notes */}
-        {po.notes && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-            <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-1">Notes / Special Instructions</p>
-            <p className="text-sm text-amber-900">{po.notes}</p>
-          </div>
-        )}
-
-        {/* Terms */}
-        <div className="mb-8 p-4 bg-gray-50 rounded-xl">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Terms & Conditions</p>
-          <ol className="text-xs text-gray-600 space-y-1 list-decimal list-inside">
-            <li>All goods/services must comply with the specifications stated in this PO.</li>
-            <li>Payment will be made within the agreed payment terms from receipt of a valid invoice quoting this PO number.</li>
-            <li>Veltriance reserves the right to return goods that do not meet quality standards at the supplier's expense.</li>
-            <li>This purchase order constitutes the entire agreement between the parties for the items listed herein.</li>
-            <li>Any changes to this PO must be agreed in writing by an authorised representative of Veltriance.</li>
-          </ol>
-        </div>
-
-        {/* Signature section */}
-        <div className="grid grid-cols-2 gap-12 pt-6 border-t border-gray-200">
-          <div>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Authorised by (Veltriance)</p>
-            <div className="border-b border-gray-300 mb-2 h-10" />
-            <p className="text-xs text-gray-500">Name: {po.createdBy.name}</p>
-            <p className="text-xs text-gray-500 mt-1">Date: _______________</p>
-          </div>
-          <div>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Accepted by (Supplier)</p>
-            <div className="border-b border-gray-300 mb-2 h-10" />
-            <p className="text-xs text-gray-500">Name: _______________</p>
-            <p className="text-xs text-gray-500 mt-1">Date: _______________</p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 pt-4 border-t border-gray-100 text-center text-xs text-gray-400">
-          <p>This is a computer-generated document. {po.poNumber} · Veltriance Technology · info@veltriance.com</p>
-        </div>
-      </div>
-    </>
-  );
+      <div className="dlv"><div className="lbl">Delivery Location</div><div className="val">{po.deliveryLocation||"To be confirmed"}</div></div>
+      <div className="tt">Line Items</div>
+      <table><thead><tr><th className="c" style={{width:"4%"}}>#</th><th style={{width:"44%"}}>Description</th><th className="c" style={{width:"7%"}}>Qty</th><th className="r" style={{width:"15%"}}>Unit Price</th><th className="c" style={{width:"10%"}}>GL A/c</th><th className="r" style={{width:"15%"}}>Total</th></tr></thead>
+      <tbody>{po.lineItems?.length>0?po.lineItems.map((li,i)=><tr key={i}><td className="c">{i+1}</td><td>{li.description||"—"}</td><td className="c">{li.quantity??1}</td><td className="r">{fmt(li.unitPrice??0)}</td><td className="c">{li.glAccount||"—"}</td><td className="r">{fmt(li.lineTotal??0)}</td></tr>):<tr><td colSpan={6} className="c" style={{color:"#9ca3af",padding:20}}>No line items</td></tr>}</tbody></table>
+      <div className="tw"><div className="tb"><div className="tr"><span>Subtotal (excl. GST)</span><span>{fmt(po.subtotal??0)}</span></div><div className="tr"><span>IGST @ 18%</span><span>{fmt(po.totalTax??0)}</span></div><div className="tr g"><span>TOTAL AMOUNT</span><span>{fmt(po.totalAmount??0)}</span></div></div></div>
+      <div className="trm"><div className="l2">Terms & Conditions</div><p>1. This Purchase Order is issued subject to the standard procurement terms of {po.organization?.name||"Ace Technologies India"}.<br/>2. All goods/services must conform to specifications. Any deviation requires prior written approval.<br/>3. Invoice must quote PO number <strong>{po.poNumber}</strong>. Invoices without reference will not be processed.<br/>4. Payment will be made as per agreed terms upon receipt of goods/services and valid tax invoice.</p></div>
+      <div className="sgs"><div className="sg"><div className="sl"/><div className="sn">Procurement Manager</div><div className="sr">Authorised Signatory</div></div><div className="sg"><div className="sl"/><div className="sn">Finance Controller</div><div className="sr">Finance Approval</div></div><div className="sg"><div className="sl"/><div className="sn">{po.supplier?.contactName||"Supplier Representative"}</div><div className="sr">Supplier Acknowledgement</div></div></div>
+      <div className="ft">Generated by Veltriance Procurement Platform &nbsp;|&nbsp; {po.poNumber} &nbsp;|&nbsp; {new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"})}<br/>System-generated document — valid without physical signature when transmitted electronically.</div>
+    </div>
+  </>;
 }

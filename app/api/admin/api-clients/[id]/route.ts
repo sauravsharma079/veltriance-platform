@@ -2,45 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
-import { randomBytes, createHash } from "crypto";
-
-async function admin() {
-  const sb = await createClient();
-  const { data:{user} } = await sb.auth.getUser();
-  if (!user) return null;
-  const [p, o] = await Promise.all([prisma.user.findUnique({where:{authId:user.id}}), getCurrentOrganization()]);
-  if (!p||!o||p.organizationId!==o.id||p.role!=="ADMIN") return null;
-  return { profile:p, organization:o };
+import crypto from "crypto";
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await ctx.params;
+    const sb = await createClient();
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const org = await getCurrentOrganization();
+    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const body = await req.json();
+    if (body.rotate_secret) {
+      const rawSecret = "vlt_secret_" + crypto.randomBytes(20).toString("hex");
+      const secretHash = crypto.createHash("sha256").update(rawSecret).digest("hex");
+      let client: any;
+      try { client = await prisma.apiClient.update({ where: { id, organizationId: org.id }, data: { clientSecretHash: secretHash } as any }); }
+      catch { client = await prisma.apiClient.update({ where: { id, organizationId: org.id }, data: { clientSecret: rawSecret } as any }); }
+      return NextResponse.json({ client, client_secret: rawSecret });
+    }
+    const client = await prisma.apiClient.update({ where: { id, organizationId: org.id }, data: { active: body.active } });
+    return NextResponse.json({ client });
+  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
 }
-
-type P = { params: Promise<{id:string}> };
-
-export async function PATCH(req: NextRequest, { params }: P) {
-  const {id} = await params; const ctx = await admin();
-  if (!ctx) return NextResponse.json({error:"Forbidden"},{status:403});
-  const c = await prisma.apiClient.findFirst({where:{id,organizationId:ctx.organization.id}});
-  if (!c) return NextResponse.json({error:"Not found"},{status:404});
-  const b = await req.json();
-  if (b.rotate_secret) {
-    const sec = "vlt_secret_"+randomBytes(32).toString("hex");
-    await prisma.apiToken.updateMany({where:{apiClientId:id,revokedAt:null},data:{revokedAt:new Date()}});
-    await prisma.apiClient.update({where:{id},data:{clientSecretHash:createHash("sha256").update(sec).digest("hex")}});
-    return NextResponse.json({client_secret:sec,_warning:"All tokens revoked."});
-  }
-  if (b.active!==undefined) {
-    await prisma.apiClient.update({where:{id},data:{active:b.active}});
-    if (!b.active) await prisma.apiToken.updateMany({where:{apiClientId:id,revokedAt:null},data:{revokedAt:new Date()}});
-    return NextResponse.json({success:true});
-  }
-  if (b.scopes) { await prisma.apiClient.update({where:{id},data:{scopes:b.scopes}}); return NextResponse.json({success:true}); }
-  return NextResponse.json({error:"Nothing to update"},{status:400});
-}
-
-export async function DELETE(_req: NextRequest, { params }: P) {
-  const {id} = await params; const ctx = await admin();
-  if (!ctx) return NextResponse.json({error:"Forbidden"},{status:403});
-  const c = await prisma.apiClient.findFirst({where:{id,organizationId:ctx.organization.id}});
-  if (!c) return NextResponse.json({error:"Not found"},{status:404});
-  await prisma.apiClient.delete({where:{id}});
-  return NextResponse.json({success:true});
+export async function DELETE(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await ctx.params;
+    const sb = await createClient();
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const org = await getCurrentOrganization();
+    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    await prisma.apiClient.delete({ where: { id, organizationId: org.id } });
+    return NextResponse.json({ ok: true });
+  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
 }
