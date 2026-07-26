@@ -446,3 +446,5 @@ export default function IntakeBot() {
     </div>
   );
 }
+
+export { default as IntakeBot };
