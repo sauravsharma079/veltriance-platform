@@ -1,4 +1,6 @@
 "use client";
+import { useState as useOnboardState } from "react";
+import SupplierOnboardingBot from "@/components/SupplierOnboardingBot";
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
@@ -33,12 +35,22 @@ function ScoreBar({ value }: { value: number | null }) {
         <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
       <span className="text-xs text-gray-600 tabular-nums">{Math.round(pct)}</span>
+    
+      {showOnboarding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-[540px] h-[640px] rounded-2xl overflow-hidden shadow-2xl">
+            <SupplierOnboardingBot onClose={() => { setShowOnboarding(false); load(); }} />
+          </div>
+        </div>
+      )}
+    
     </div>
   );
 }
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [showOnboarding, setShowOnboarding] = useOnboardState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
@@ -82,10 +94,10 @@ export default function SuppliersPage() {
             <h1 className="text-lg font-bold text-gray-900">Supplier Management</h1>
             <p className="text-xs text-gray-400 mt-0.5">Manage your approved vendor network</p>
           </div>
-          <Link href="/dashboard/suppliers/new"
+          <button onClick={() => setShowOnboarding(true)}
             className="flex items-center gap-2 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]">
             <Plus className="size-3.5" />Onboard Supplier
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -210,6 +222,15 @@ export default function SuppliersPage() {
           <p className="text-xs text-gray-400 mt-3 text-center">{suppliers.length} supplier{suppliers.length !== 1 ? "s" : ""} shown</p>
         )}
       </div>
+    
+      {showOnboarding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-[540px] h-[640px] rounded-2xl overflow-hidden shadow-2xl">
+            <SupplierOnboardingBot onClose={() => { setShowOnboarding(false); load(); }} />
+          </div>
+        </div>
+      )}
+    
     </div>
   );
 }

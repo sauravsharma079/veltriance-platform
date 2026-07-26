@@ -11,10 +11,7 @@ export async function GET() {
     if (!user) return NextResponse.json({ clients: [] });
     const org = await getCurrentOrganization();
     if (!org) return NextResponse.json({ clients: [] });
-    const clients = await prisma.apiClient.findMany({
-      where: { organizationId: org.id },
-      orderBy: { createdAt: "desc" },
-    });
+    const clients = await prisma.apiClient.findMany({ where: { organizationId: org.id }, orderBy: { createdAt: "desc" } });
     return NextResponse.json({ clients });
   } catch { return NextResponse.json({ clients: [] }); }
 }
@@ -29,23 +26,35 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, description, scopes } = body;
     if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+
     const clientId = "vlt_client_" + crypto.randomBytes(12).toString("hex");
-    const clientSecret = "vlt_secret_" + crypto.randomBytes(20).toString("hex");
-    const client = await prisma.apiClient.create({
-      data: {
-        organizationId: org.id,
-        name: name.trim(),
-        description: description || null,
-        clientId,
-        clientSecret,
-        scopes: Array.isArray(scopes) ? scopes : [],
-        active: true,
-      },
-    });
-    return NextResponse.json({ client: { ...client, clientSecret } }, { status: 201 });
+    const rawSecret = "vlt_secret_" + crypto.randomBytes(20).toString("hex");
+    const secretHash = crypto.createHash("sha256").update(rawSecret).digest("hex");
+
+    // Check which field the schema uses
+    let client: any;
+    try {
+      client = await (prisma.apiClient.create as any)({
+        data: {
+          organizationId: org.id, name: name.trim(), description: description || null,
+          clientId, clientSecretHash: secretHash,
+          scopes: Array.isArray(scopes) ? scopes : [], active: true,
+        },
+      });
+    } catch {
+      // Fallback: try clientSecret field
+      client = await (prisma.apiClient.create as any)({
+        data: {
+          organizationId: org.id, name: name.trim(), description: description || null,
+          clientId, clientSecret: rawSecret,
+          scopes: Array.isArray(scopes) ? scopes : [], active: true,
+        },
+      });
+    }
+    return NextResponse.json({ client: { ...client, clientSecret: rawSecret } }, { status: 201 });
   } catch (e: any) {
-    console.error("[api-clients POST]", e?.message, e?.stack);
-    return NextResponse.json({ error: e?.message ?? "Failed to create client" }, { status: 500 });
+    console.error("[api-clients POST]", e?.message);
+    return NextResponse.json({ error: e?.message ?? "Failed" }, { status: 500 });
   }
 }
 
