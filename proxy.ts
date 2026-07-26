@@ -9,13 +9,9 @@ export async function proxy(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return req.cookies.getAll();
-        },
+        getAll() { return req.cookies.getAll(); },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            req.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
           response = NextResponse.next({ request: req });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
@@ -31,21 +27,19 @@ export async function proxy(req: NextRequest) {
   const hostname = host.split(":")[0];
 
   const HOST_MAP: Record<string, string> = {
-    "localhost":              "nexcore",
-    "127.0.0.1":             "nexcore",
-    "ace.localhost":         "ace",
-    "nexcore.localhost":     "nexcore",
-    "nexcore.veltriance.com":"nexcore",
+    "localhost":               "ace",
+    "127.0.0.1":              "ace",
+    "ace.localhost":          "ace",
+    "app.veltriance.com":     "ace",
+    "veltriance-platform.vercel.app": "ace",
   };
 
-  const slug = HOST_MAP[hostname] ?? hostname.split(".")[0];
+  const slug = HOST_MAP[hostname] ?? "ace";
   response.headers.set("x-tenant-slug", slug);
 
   return response;
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };
