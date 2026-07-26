@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Check, X, Clock } from "lucide-react";
+import { ArrowLeft, Check, X, Clock, ShoppingCart } from "lucide-react";
 
 type Requisition = {
   id: string;
@@ -11,15 +11,25 @@ type Requisition = {
   title: string;
   description: string | null;
   category: string | null;
+  priority: string | null;
   status: string;
   currency: string;
   totalAmount: string;
-  costCenter: string | null;
+  taxAmount: string | null;
+  businessUnit: string | null;
+  department: string | null;
+  project: string | null;
   deliveryLocation: string | null;
   requiredDate: string | null;
+  businessJustification: string | null;
   intakeSource: string;
   requestor: { name: string; email: string; department: string | null };
-  lineItems: { id: string; description: string; quantity: string; unitPrice: string; lineTotal: string; supplier: { name: string } | null }[];
+  lineItems: {
+    id: string; description: string; quantity: string; unitPrice: string; lineTotal: string;
+    taxRate: string | null; glAccount: string | null; costCenter: string | null;
+    contractReference: string | null; glCoding: Record<string, string> | null;
+    supplier: { name: string } | null;
+  }[];
   approvalSteps: { id: string; stepType: string; sequence: number; status: string; comment: string | null; approver: { name: string } | null }[];
 };
 
@@ -81,17 +91,40 @@ export default function RequisitionDetailPage() {
       <div className="grid sm:grid-cols-2 gap-4 mb-6">
         <InfoCard label="Category" value={req.category} />
         <InfoCard label="Total amount" value={`${req.currency} ${Number(req.totalAmount).toLocaleString()}`} />
-        <InfoCard label="Cost center" value={req.costCenter} />
         <InfoCard label="Delivery location" value={req.deliveryLocation} />
+        <InfoCard label="Required by" value={req.requiredDate ? new Date(req.requiredDate).toLocaleDateString() : null} />
+        {req.businessUnit && <InfoCard label="Business unit" value={req.businessUnit} />}
+        {req.department && <InfoCard label="Department" value={req.department} />}
       </div>
 
-      {req.description && (
-        <div className="mb-6">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">Description</p>
-          <p className="text-sm text-gray-700">{req.description}</p>
+      {/* ... status banners ... */}
+      {req.status === "APPROVED" && (
+        <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-green-800">All approvals complete</p>
+            <p className="text-xs text-green-600 mt-0.5">A Purchase Order draft has been created automatically — go to the PO module to review and send it to the supplier.</p>
+          </div>
+          <Link href="/dashboard/purchase-orders"
+            className="flex items-center gap-1.5 bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-green-800 transition-colors shrink-0">
+            <ShoppingCart className="size-4" /> View PO
+          </Link>
         </div>
       )}
 
+      {req.status === "PO_CREATED" && (
+        <div className="mb-6 bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-indigo-800">Purchase order issued</p>
+            <p className="text-xs text-indigo-600 mt-0.5">This requisition has been converted to a PO and sent to the supplier.</p>
+          </div>
+          <Link href="/dashboard/purchase-orders"
+            className="flex items-center gap-1.5 bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-indigo-800 transition-colors shrink-0">
+            <ShoppingCart className="size-4" /> View PO
+          </Link>
+        </div>
+      )}
+
+      {/* Line items — showing supplier, cost center, and GL coding per line */}
       <div className="mb-6">
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Line items</p>
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -99,21 +132,40 @@ export default function RequisitionDetailPage() {
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                 <th className="px-4 py-2.5 font-medium">Description</th>
-                <th className="px-4 py-2.5 font-medium">Qty</th>
-                <th className="px-4 py-2.5 font-medium">Unit price</th>
-                <th className="px-4 py-2.5 font-medium">Total</th>
+                <th className="px-4 py-2.5 font-medium">Supplier</th>
+                <th className="px-4 py-2.5 font-medium">GL account</th>
+                <th className="px-4 py-2.5 font-medium text-right">Qty</th>
+                <th className="px-4 py-2.5 font-medium text-right">Unit price</th>
+                <th className="px-4 py-2.5 font-medium text-right">Total</th>
               </tr>
             </thead>
             <tbody>
-              {req.lineItems.map((li) => (
-                <tr key={li.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-4 py-2.5 text-gray-700">{li.description}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{li.quantity}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{Number(li.unitPrice).toLocaleString()}</td>
-                  <td className="px-4 py-2.5 text-gray-700">{Number(li.lineTotal).toLocaleString()}</td>
-                </tr>
-              ))}
+              {req.lineItems.map((li) => {
+                const glString = li.glCoding ? Object.values(li.glCoding).join(" - ") : li.glAccount;
+                return (
+                  <tr key={li.id} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 text-gray-800 font-medium">{li.description}</td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs">{li.supplier?.name ?? <span className="text-red-400">Not set</span>}</td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {glString ? (
+                        <span className="font-mono text-[#1A2A52] bg-[#1A2A52]/5 px-1.5 py-0.5 rounded">{glString}</span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 text-right">{li.quantity}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-right">{Number(li.unitPrice).toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-gray-800 font-medium text-right">{req.currency} {Number(li.lineTotal).toLocaleString()}</td>
+                  </tr>
+                );
+              })}
             </tbody>
+            <tfoot>
+              <tr className="border-t border-gray-100">
+                <td colSpan={6} className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">Total</td>
+                <td className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">
+                  {req.currency} {Number(req.totalAmount).toLocaleString()}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

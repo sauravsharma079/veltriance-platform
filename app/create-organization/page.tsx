@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 function slugify(value: string) {
   return value
@@ -22,8 +22,12 @@ export default function CreateOrganizationPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState(false);
+  const [rootDomain, setRootDomain] = useState("veltriance-platform.com");
 
-  const rootDomain = typeof window !== "undefined" ? window.location.host : "veltriance-platform.com";
+  // Read the actual host only after hydration to avoid server/client mismatch
+  useEffect(() => {
+    setRootDomain(window.location.host);
+  }, []);
 
   function handleOrgNameChange(value: string) {
     setOrganizationName(value);

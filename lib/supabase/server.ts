@@ -27,15 +27,13 @@ export async function createClient() {
   );
 }
 
+export const IMPERSONATION_COOKIE = "vt_impersonate";
+
 /**
  * Returns the current authenticated user + their app-level profile row, or null.
- *
- * Critically, this also enforces tenant isolation: if a logged-in user's session
- * somehow ends up on a different organization's subdomain than the one their
- * profile belongs to, this returns null rather than the profile — callers should
- * treat that exactly like "not logged in" rather than silently using cross-tenant
- * data. In normal operation this can't happen (Supabase session cookies are
- * scoped to the subdomain they were issued on), but this is the backstop.
+ * If an admin has set the impersonation cookie, returns the impersonated user's
+ * profile instead — but only after verifying the real session is still an admin
+ * in the same org, so the cookie can't be forged by a non-admin.
  */
 export async function getCurrentUser() {
   const supabase = await createClient();
@@ -47,14 +45,32 @@ export async function getCurrentUser() {
   const { prisma } = await import("@/lib/prisma");
   const { getCurrentOrganization } = await import("@/lib/tenant");
 
-  const [profile, organization] = await Promise.all([
+  const [realProfile, organization] = await Promise.all([
     prisma.user.findUnique({ where: { authId: user.id } }),
     getCurrentOrganization(),
   ]);
 
-  if (!profile || !organization || profile.organizationId !== organization.id) {
+  if (!realProfile || !organization || realProfile.organizationId !== organization.id) {
     return null;
   }
 
-  return { authUser: user, profile, organization };
+  // Check for impersonation cookie (admin "act as user" feature)
+  const cookieStore = await cookies();
+  const impCookie = cookieStore.get(IMPERSONATION_COOKIE)?.value;
+  if (impCookie && realProfile.role === "ADMIN") {
+    const [targetId, adminId] = impCookie.split("|");
+    if (adminId === realProfile.id && targetId) {
+      const targetProfile = await prisma.user.findUnique({ where: { id: targetId } });
+      if (targetProfile && targetProfile.organizationId === organization.id) {
+        return {
+          authUser: user,
+          profile: targetProfile,
+          organization,
+          impersonating: { realAdmin: realProfile },
+        };
+      }
+    }
+  }
+
+  return { authUser: user, profile: realProfile, organization, impersonating: null };
 }

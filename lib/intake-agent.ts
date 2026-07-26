@@ -24,11 +24,12 @@ export type IntakeExtraction = {
   confidence: "high" | "medium" | "low";
 };
 
-export type RequiredSlot = "category" | "quantity" | "itemDescription" | "supplier" | "deliveryLocation" | "costCenter" | "requiredDate";
+export type RequiredSlot = "category" | "quantity" | "unitPrice" | "itemDescription" | "supplier" | "deliveryLocation" | "costCenter" | "requiredDate";
 
 export type IntakeState = {
   category: string | null;
   quantity: number | null;
+  unitPrice: number | null;
   itemDescription: string | null;
   supplier: string | null;
   deliveryLocation: string | null;
@@ -39,6 +40,7 @@ export type IntakeState = {
 export const EMPTY_INTAKE_STATE: IntakeState = {
   category: null,
   quantity: null,
+  unitPrice: null,
   itemDescription: null,
   supplier: null,
   deliveryLocation: null,
@@ -108,6 +110,7 @@ export function extractEntities(text: string): IntakeExtraction {
 const SLOT_QUESTIONS: Record<RequiredSlot, string> = {
   category: "What category does this fall under? (e.g. IT Hardware, Office Supplies, Professional Services)",
   quantity: "How many do you need?",
+  unitPrice: "What's the estimated unit price? (enter 0 if you don't know yet)",
   itemDescription: "Could you describe what you're requesting in a bit more detail?",
   supplier: "Do you have a preferred supplier in mind, or should we recommend one?",
   deliveryLocation: "Where should this be delivered?",
@@ -115,7 +118,7 @@ const SLOT_QUESTIONS: Record<RequiredSlot, string> = {
   requiredDate: "When do you need this by?",
 }
 
-const SLOT_ORDER: RequiredSlot[] = ["itemDescription", "category", "quantity", "supplier", "deliveryLocation", "costCenter", "requiredDate"];
+const SLOT_ORDER: RequiredSlot[] = ["itemDescription", "category", "quantity", "unitPrice", "supplier", "deliveryLocation", "costCenter", "requiredDate"];
 
 /** Returns the next unfilled slot's question, or null if the state is complete. */
 export function getNextQuestion(state: IntakeState): { slot: RequiredSlot; question: string } | null {

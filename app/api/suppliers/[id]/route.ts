@@ -1,58 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const organization = await getCurrentOrganization();
-  if (!organization) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-
-  const supplier = await prisma.supplier.findUnique({
-    where: { id },
-    include: { requestedBy: { select: { name: true, email: true } } },
-  });
-  if (!supplier || supplier.organizationId !== organization.id) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  return NextResponse.json({ supplier });
-}
-
-const statusSchema = z.object({
-  status: z.enum(["ACTIVE", "PENDING_APPROVAL", "BLOCKED", "INACTIVE"]),
-});
-
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const [profile, organization] = await Promise.all([
+async function getCtx() {
+  const sb = await createClient();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  const [profile, org] = await Promise.all([
     prisma.user.findUnique({ where: { authId: user.id } }),
     getCurrentOrganization(),
   ]);
-  if (!profile || !organization || profile.organizationId !== organization.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (profile.role !== "PROCUREMENT" && profile.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden — procurement or admin role required" }, { status: 403 });
-  }
+  if (!profile || !org || profile.organizationId !== org.id) return null;
+  return { profile, org };
+}
 
-  const existing = await prisma.supplier.findUnique({ where: { id } });
-  if (!existing || existing.organizationId !== organization.id) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const body = await req.json();
-  const parsed = statusSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
-  }
-
-  const supplier = await prisma.supplier.update({ where: { id }, data: parsed.data });
+export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  const ctx = await getCtx();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supplier = await prisma.supplier.findFirst({
+    where: { id, organizationId: ctx.org.id },
+    include: {
+      contacts: true,
+      documents: { orderBy: { createdAt: "desc" } },
+      onboardingProfile: true,
+      certifications_v2: true,
+      performanceReviews: { orderBy: { createdAt: "desc" }, take: 4 },
+      messages: { orderBy: { createdAt: "desc" }, take: 20 },
+      purchaseOrders: { orderBy: { createdAt: "desc" }, take: 5,
+        select: { id: true, poNumber: true, status: true, totalAmount: true, issuedAt: true } },
+    },
+  });
+  if (!supplier) return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
   return NextResponse.json({ supplier });
+}
+
+export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  const ctx = await getCtx();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const existing = await prisma.supplier.findFirst({ where: { id, organizationId: ctx.org.id } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const body = await req.json();
+  const allowed = ["name","contactEmail","contactName","contactPhone","category","website","city","state","country","tier","status","onboardingStage","riskLevel","riskScore","rating","preferred","notes"];
+  const data: Record<string, unknown> = {};
+  for (const f of allowed) if (body[f] !== undefined) data[f] = body[f];
+  const supplier = await prisma.supplier.update({ where: { id }, data: { ...data, updatedAt: new Date() } });
+  return NextResponse.json({ supplier });
+}
+
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  const ctx = await getCtx();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const existing = await prisma.supplier.findFirst({ where: { id, organizationId: ctx.org.id } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  await prisma.supplier.delete({ where: { id } });
+  return NextResponse.json({ success: true });
 }

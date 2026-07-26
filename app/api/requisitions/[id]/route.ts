@@ -24,7 +24,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     include: {
       requestor: { select: { name: true, email: true, department: true } },
-      lineItems: { include: { supplier: true } },
+      lineItems: {
+        include: { supplier: { select: { name: true } } },
+        orderBy: { createdAt: "asc" },
+      },
       approvalSteps: { include: { approver: { select: { name: true } } }, orderBy: { sequence: "asc" } },
     },
   });

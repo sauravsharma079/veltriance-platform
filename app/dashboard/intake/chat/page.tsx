@@ -51,18 +51,26 @@ export default function IntakeChatPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: state.itemDescription ?? "New request",
-        category: state.category,
+        category: state.category ?? "General",
         quantity: state.quantity ?? 1,
-        unitPrice: 0,
+        unitPrice: state.unitPrice ?? 0,
         supplierName: state.supplier,
         deliveryLocation: state.deliveryLocation,
         costCenter: state.costCenter,
-        requiredDate: state.requiredDate,
+        requiredDate: (() => {
+            if (!state.requiredDate) return undefined;
+            const d = new Date(state.requiredDate);
+            return isNaN(d.getTime()) ? undefined : state.requiredDate;
+          })(),
         intakeSource: "CHATBOT",
       }),
     });
     setSubmitting(false);
-    if (!res.ok) return;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setMessages(m => [...m, { role: "assistant", content: `Sorry, I couldn't create the draft: ${data.error ?? "unknown error"}. Please try the structured form instead.` }]);
+      return;
+    }
     const { requisition } = await res.json();
     router.push(`/dashboard/requisitions/${requisition.id}`);
   }
@@ -109,6 +117,8 @@ export default function IntakeChatPage() {
               <Row label="Item" value={state.itemDescription} />
               <Row label="Category" value={state.category} />
               <Row label="Quantity" value={state.quantity?.toString()} />
+              <Row label="Unit price" value={state.unitPrice != null ? `${state.unitPrice.toLocaleString()}` : null} />
+              <Row label="Est. total" value={state.quantity != null && state.unitPrice != null ? (state.quantity * state.unitPrice).toLocaleString() : null} />
               <Row label="Supplier" value={state.supplier} />
               <Row label="Delivery location" value={state.deliveryLocation} />
               <Row label="Cost center" value={state.costCenter} />

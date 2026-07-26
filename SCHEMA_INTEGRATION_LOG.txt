@@ -1,0 +1,24 @@
+
+Add these fields to your Integration model in prisma/schema.prisma:
+
+  lastError  String?
+  syncCount  Int     @default(0)
+  errorCount Int     @default(0)
+  logs       IntegrationLog[]
+
+Add this new model after Integration:
+
+model IntegrationLog {
+  id            String      @id @default(uuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  level         String      @default("INFO")  // INFO | WARN | ERROR | SUCCESS
+  event         String                         // CONNECTED | SYNC_START | SYNC_SUCCESS | SYNC_ERROR | DISCONNECTED
+  message       String
+  meta          Json?
+  createdAt     DateTime    @default(now())
+
+  @@index([integrationId])
+  @@index([createdAt])
+  @@index([level])
+}

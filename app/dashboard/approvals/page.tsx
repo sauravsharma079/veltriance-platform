@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { CheckSquare } from "lucide-react";
 
 export default async function ApprovalsPage() {
-  const { profile, organization } = (await getCurrentUser())!;
+  const result = await getCurrentUser();
+  if (!result || !result.profile) redirect("/login");
+  const { profile, organization } = result;
 
   const pendingSteps = await prisma.approvalStep.findMany({
     where: {

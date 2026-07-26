@@ -1,0 +1,11 @@
+
+Add this button to the top bar of app/dashboard/integrations/page.tsx
+(inside the top bar div, next to the stats):
+
+  import Link from "next/link";
+  import { Activity } from "lucide-react";
+
+  <Link href="/dashboard/integrations/dashboard"
+    className="flex items-center gap-2 text-sm font-medium text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5">
+    <Activity className="size-4" /> View dashboard
+  </Link>

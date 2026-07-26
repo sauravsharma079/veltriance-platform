@@ -1,0 +1,119 @@
+
+// ── Paste these into prisma/schema.prisma ──────────────────────────────────
+// Also add to Supplier model:
+//   onboardingProfile  SupplierOnboardingProfile?
+//   documents          SupplierDocument[]
+//   certifications_v2  SupplierCertification[]
+//   performanceReviews SupplierPerformanceReview[]
+//   messages           SupplierMessage[]
+
+model SupplierOnboardingProfile {
+  id              String   @id @default(uuid())
+  supplierId      String   @unique
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  legalName       String?
+  tradeName       String?
+  businessType    String?
+  yearEstablished Int?
+  panNumber       String?
+  gstNumber       String?
+  msmeNumber      String?
+  msmeCategory    String?
+  bankName        String?
+  beneficiaryName String?
+  accountNumber   String?
+  ifscCode        String?
+  accountType     String?
+  regAddressLine1 String?
+  regCity         String?
+  regState        String?
+  regPostal       String?
+  regCountry      String?  @default("India")
+  productCategories String[]
+  womenOwned      Boolean  @default(false)
+  minorityOwned   Boolean  @default(false)
+  smallBusiness   Boolean  @default(false)
+  completionScore Int      @default(0)
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum DocumentType {
+  PAN_CARD
+  GST_CERTIFICATE
+  INCORPORATION_CERTIFICATE
+  MSME_CERTIFICATE
+  CANCELLED_CHEQUE
+  BANK_STATEMENT
+  ISO_CERTIFICATE
+  QUALITY_CERTIFICATE
+  INSURANCE_CERTIFICATE
+  ANNUAL_REPORT
+  NDA
+  MSA
+  OTHER
+}
+
+model SupplierDocument {
+  id           String       @id @default(uuid())
+  supplierId   String
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  type         DocumentType
+  name         String
+  fileUrl      String
+  fileSize     Int?
+  mimeType     String?
+  status       String       @default("PENDING")
+  verifiedById String?
+  verifiedAt   DateTime?
+  rejectedNote String?
+  expiresAt    DateTime?
+  createdAt    DateTime     @default(now())
+  @@index([supplierId])
+}
+
+model SupplierCertification {
+  id            String   @id @default(uuid())
+  supplierId    String
+  supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  name          String
+  issuingBody   String?
+  certificateNo String?
+  issuedAt      DateTime?
+  expiresAt     DateTime?
+  status        String   @default("ACTIVE")
+  documentUrl   String?
+  createdAt     DateTime @default(now())
+  @@index([supplierId])
+}
+
+model SupplierPerformanceReview {
+  id              String   @id @default(uuid())
+  supplierId      String
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  reviewPeriod    String
+  reviewedById    String
+  onTimeDelivery  Float
+  qualityScore    Float
+  responsiveness  Float
+  invoiceAccuracy Float
+  overallScore    Float
+  comments        String?
+  createdAt       DateTime @default(now())
+  @@index([supplierId])
+}
+
+model SupplierMessage {
+  id         String   @id @default(uuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  fromPortal Boolean  @default(false)
+  senderName String
+  subject    String
+  body       String
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+  @@index([supplierId])
+}

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { canActOnStep } from "@/lib/approval-matrix";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { generatePONumber } from "@/lib/po-number";
 
 const STATUS_FOR_STEP: Record<ApprovalStepType, RequisitionStatus> = {
   [ApprovalStepType.MANAGER]: RequisitionStatus.MANAGER_APPROVAL,
@@ -72,7 +73,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Approve this step, then figure out what's next.
   const nextStep = requisition.approvalSteps.find((s) => s.sequence === currentStep.sequence + 1);
-  const newStatus = nextStep ? STATUS_FOR_STEP[nextStep.stepType] : RequisitionStatus.ERP_SYNC_PENDING;
+  const isFullyApproved = !nextStep;
+  const newStatus = isFullyApproved ? RequisitionStatus.APPROVED : STATUS_FOR_STEP[nextStep.stepType];
 
   await prisma.$transaction([
     prisma.approvalStep.update({
@@ -84,6 +86,66 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: { status: newStatus },
     }),
   ]);
+
+  // When fully approved, auto-create a PO draft so procurement can review and send it.
+  if (isFullyApproved) {
+    try {
+      const fullReq = await prisma.requisition.findUnique({
+        where: { id },
+        include: {
+          lineItems: {
+            include: { supplier: { select: { contactEmail: true, paymentTerms: true } } },
+          },
+        },
+      });
+      if (fullReq) {
+        const poNumber = await generatePONumber(organization.id);
+        const primaryLine = fullReq.lineItems[0];
+        const supplierId = primaryLine?.supplierId ?? undefined;
+        const supplierEmail = primaryLine?.supplier?.contactEmail ?? undefined;
+        const paymentTerms = primaryLine?.supplier?.paymentTerms ?? undefined;
+
+        await prisma.purchaseOrder.create({
+          data: {
+            organizationId: organization.id,
+            poNumber,
+            requisitionId: id,
+            supplierId,
+            createdById: profile.id,
+            currency: fullReq.currency,
+            subtotal: fullReq.totalAmount,
+            taxAmount: fullReq.taxAmount ?? 0,
+            totalAmount: fullReq.totalAmount,
+            deliveryAddress: fullReq.deliveryLocation,
+            expectedDelivery: fullReq.requiredDate ?? undefined,
+            supplierEmail,
+            paymentTerms,
+            notes: fullReq.description ?? fullReq.businessJustification ?? undefined,
+            lineItems: {
+              create: fullReq.lineItems.map(li => {
+                // Convert glCoding JSON → account string for the PO line item's glAccount field
+                // e.g. { "1": "BA01", "2": "CC001", "3": "4500" } → "BA01 - CC001 - 4500"
+                const glFromCoding = li.glCoding
+                  ? Object.values(li.glCoding as Record<string, string>).join(" - ")
+                  : null;
+                return {
+                  description: li.description,
+                  quantity: li.quantity,
+                  unitPrice: li.unitPrice,
+                  lineTotal: li.lineTotal,
+                  glAccount: glFromCoding ?? li.glAccount ?? undefined,
+                  supplierId: li.supplierId ?? undefined,
+                };
+              }),
+            },
+          },
+        });
+      }
+    } catch (poErr) {
+      // Log but don't fail the approval — the requisition is approved regardless
+      console.error("[approve] PO auto-creation failed:", poErr);
+    }
+  }
 
   return NextResponse.json({ status: newStatus });
 }
