@@ -27,11 +27,11 @@ export async function proxy(req: NextRequest) {
   const hostname = host.split(":")[0];
 
   const HOST_MAP: Record<string, string> = {
-    "localhost":               "ace",
-    "127.0.0.1":              "ace",
-    "ace.localhost":          "ace",
-    "app.veltriance.com":     "ace",
-    "veltriance-platform.vercel.app": "ace",
+    "localhost":                           "ace",
+    "127.0.0.1":                           "ace",
+    "ace.localhost":                       "ace",
+    "app.veltriance.com":                  "ace",
+    "veltriance-platform.vercel.app":      "ace",
   };
 
   const slug = HOST_MAP[hostname] ?? "ace";
