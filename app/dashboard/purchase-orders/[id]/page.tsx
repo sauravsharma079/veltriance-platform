@@ -124,7 +124,7 @@ export default function PODetailPage() {
       <div className="flex items-start justify-between mb-1">
         <h1 className="text-xl font-semibold text-gray-900">{po.poNumber}</h1>
         <div className="flex items-center gap-2">
-          <a href={`/dashboard/purchase-orders/${id}/print`} target="_blank" rel="noopener noreferrer"
+          <a href={`/api/purchase-orders/${id}/download`} target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium px-3.5 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
             <Download className="size-3.5" /> Download PDF
           </a>
