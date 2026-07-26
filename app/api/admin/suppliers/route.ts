@@ -6,22 +6,18 @@ export async function GET(req: NextRequest) {
   try {
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ purchaseOrders: [] });
+    if (!user) return NextResponse.json({ suppliers: [] });
     const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ purchaseOrders: [] });
+    if (!org) return NextResponse.json({ suppliers: [] });
     const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "200");
-    const purchaseOrders = await prisma.purchaseOrder.findMany({
+    const suppliers = await prisma.supplier.findMany({
       where: { organizationId: org.id },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ preferred: "desc" }, { name: "asc" }],
       take: limit,
-      include: {
-        supplier: { select: { name: true, code: true } },
-        lineItems: { select: { glAccount: true, lineTotal: true, description: true } },
-      },
     });
-    return NextResponse.json({ purchaseOrders });
+    return NextResponse.json({ suppliers });
   } catch (e: any) {
-    console.error("[purchase-orders]", e?.message);
-    return NextResponse.json({ purchaseOrders: [] });
+    console.error("[admin/suppliers]", e?.message);
+    return NextResponse.json({ suppliers: [] });
   }
 }

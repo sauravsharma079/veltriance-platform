@@ -97,23 +97,50 @@ async function fetchDashboard(): Promise<DashboardData | null> {
     const activeSuppliers  = sups.filter(s => s.status === "ACTIVE").length;
     const openPOs          = pos.filter(p => ["SENT","ACKNOWLEDGED","PARTIALLY_RECEIVED"].includes(p.status)).length;
 
-    // Spend by category (from requisitions)
+    // Spend by category — use actual category field, fallback to title parsing
     const catSpend: Record<string, number> = {};
     for (const r of reqs) {
-      const cat = r.title.includes("Cloud") ? "Cloud" : r.title.includes("Software") || r.title.includes("Microsoft") || r.title.includes("365") ? "Software" : r.title.includes("Consult") ? "Consulting" : r.title.includes("Network") ? "Hardware" : "Hardware";
+      const raw = (r as any).category ?? "";
+      let cat = raw;
+      if (!cat || cat === "General") {
+        const t = r.title.toLowerCase();
+        cat = t.includes("cloud") || t.includes("aws") || t.includes("azure") ? "Cloud Services"
+            : t.includes("software") || t.includes("license") || t.includes("365") || t.includes("adobe") || t.includes("zoom") || t.includes("salesforce") ? "Software & Licenses"
+            : t.includes("consult") || t.includes("service") ? "Consulting"
+            : t.includes("network") || t.includes("cisco") || t.includes("switch") ? "Networking"
+            : t.includes("chair") || t.includes("facility") || t.includes("ups") ? "Facilities & Infra"
+            : "IT Hardware";
+      }
       catSpend[cat] = (catSpend[cat] ?? 0) + Number(r.totalAmount ?? 0);
     }
-    const spendByCategory = Object.entries(catSpend).map(([name, value], i) => ({ name, value, color: CHART_COLORS[i % CHART_COLORS.length] }));
+    // Also add spend from POs if reqs are empty
+    if (Object.keys(catSpend).length === 0) {
+      for (const po of pos) {
+        const name = po.supplier?.name ?? "Other";
+        catSpend[name] = (catSpend[name] ?? 0) + Number(po.totalAmount ?? 0);
+      }
+    }
+    const spendByCategory = Object.entries(catSpend)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([name, value], i) => ({ name, value, color: CHART_COLORS[i % CHART_COLORS.length] }));
 
-    // Monthly spend (last 6 months)
-    const monthlySpend = Array.from({ length: 6 }, (_, i) => {
+    // Monthly spend (last 6 months) — use actual requisition dates
+    const monthBuckets: Record<string, number> = {};
+    for (const r of reqs) {
+      const d2 = new Date(r.createdAt);
+      const key = d2.toLocaleString("en-IN", { month: "short" });
+      monthBuckets[key] = (monthBuckets[key] ?? 0) + Number(r.totalAmount ?? 0);
+    }
+    const months6 = Array.from({ length: 6 }, (_, i) => {
       const d = new Date(); d.setMonth(d.getMonth() - (5 - i));
-      return {
-        month: d.toLocaleString("en-IN", { month: "short" }),
-        spend: Math.round((totalSpend / 6) * (0.6 + Math.random() * 0.8)),
-        pos: Math.max(1, Math.round(pos.length / 6 * (0.5 + Math.random()))),
-      };
+      return d.toLocaleString("en-IN", { month: "short" });
     });
+    const monthlySpend = months6.map(month => ({
+      month,
+      spend: monthBuckets[month] ?? 0,
+      pos: 0,
+    }));
 
     // Top suppliers by PO
     const supSpend: Record<string, { spend: number; pos: number; rating: number }> = {};
