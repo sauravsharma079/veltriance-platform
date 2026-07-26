@@ -447,4 +447,3 @@ export default function IntakeBot() {
   );
 }
 
-export { default as IntakeBot };
