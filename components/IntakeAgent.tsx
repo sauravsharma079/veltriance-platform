@@ -136,10 +136,13 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     setDraft(newDraft);
 
     if (!extracted.category || !dec) {
+      const cats = data.categories ?? [];
       push({
         role: "agent",
-        text: `I couldn't confidently tell what category this falls under${confidenceNote}. Which one is it?`,
-        options: (data.categories ?? []).map((c, i) => `${i + 1}. ${c}`),
+        text: cats.length > 0
+          ? `I couldn't confidently tell what category this falls under${confidenceNote}. Pick one below, or just type it.`
+          : `I couldn't confidently tell what category this falls under${confidenceNote}. What category is it? (e.g. IT Hardware, Office Supplies)`,
+        options: cats.length > 0 ? cats.map((c, i) => `${i + 1}. ${c}`) : undefined,
       });
       setStep("CATEGORY_PICK");
       return;
@@ -149,9 +152,25 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
   }
 
   async function handleCategoryPick(text: string) {
-    const num = parseInt(text);
-    const category = !isNaN(num) ? categories[num - 1] : categories.find(c => c.toLowerCase().includes(text.toLowerCase()));
-    if (!category) { push({ role: "agent", text: "Please pick a category from the list.", options: categories.map((c, i) => `${i + 1}. ${c}`) }); return; }
+    // Two distinct "this is an index, not free text" signals: a button click sends
+    // "N. Label" (bulletMatch); a manually-typed bare number is index selection too.
+    // Anything else — including text that merely starts with a digit, e.g. "5G
+    // Equipment" — is free text.
+    const bulletMatch = text.match(/^(\d+)\.\s/);
+    const pureNumber = /^\d+$/.test(text.trim());
+    const isIndexSelection = categories.length > 0 && (!!bulletMatch || pureNumber);
+    const idx = bulletMatch ? parseInt(bulletMatch[1]) : pureNumber ? parseInt(text.trim()) : NaN;
+    const matched = isIndexSelection ? categories[idx - 1] : categories.find(c => c.toLowerCase().includes(text.toLowerCase()));
+
+    if (isIndexSelection && !matched) {
+      push({ role: "agent", text: `Please pick 1–${categories.length}, or just type the category name.`, options: categories.length > 0 ? categories.map((c, i) => `${i + 1}. ${c}`) : undefined });
+      return;
+    }
+    // Free-text fallback: if it doesn't match a known category (or none are configured
+    // for this org yet), accept whatever the user typed as a custom category rather
+    // than blocking them — the alternative is an unrecoverable dead end.
+    const category = matched ?? text.trim();
+    if (!category) { push({ role: "agent", text: "What category is this?" }); return; }
     if (!draft) return;
 
     push({ role: "user", text: category });
