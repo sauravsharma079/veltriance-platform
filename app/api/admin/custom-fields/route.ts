@@ -61,6 +61,12 @@ const createSchema = z.object({
   helpText: z.string().optional(),
 });
 
+function zodErrorMessage(err: z.ZodError): string {
+  const flat = err.flatten();
+  const fieldParts = Object.entries(flat.fieldErrors).map(([k, v]) => `${k}: ${(v as string[] | undefined)?.[0]}`);
+  return [...flat.formErrors, ...fieldParts].join(", ") || "Validation failed";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireAdmin();
@@ -68,7 +74,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const parsed = createSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
+    if (!parsed.success) return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 422 });
     const d = parsed.data;
     const fieldKey = (d.fieldKey ?? d.name).toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
 

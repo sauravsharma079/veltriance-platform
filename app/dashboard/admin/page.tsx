@@ -150,7 +150,7 @@ export default function AdminPage() {
     try {
       const r = await fetch(url, { method, headers: {"Content-Type":"application/json"}, body: body ? JSON.stringify(body) : undefined });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Failed");
+      if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : JSON.stringify(d.error) || "Failed");
       await loadAll();
       setModal(null); setEditItem(null);
     } catch (e: any) { setError(e.message); }

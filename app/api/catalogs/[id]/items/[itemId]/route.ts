@@ -34,6 +34,12 @@ const updateSchema = z.object({
   active: z.boolean().optional(),
 });
 
+function zodErrorMessage(err: z.ZodError): string {
+  const flat = err.flatten();
+  const fieldParts = Object.entries(flat.fieldErrors).map(([k, v]) => `${k}: ${(v as string[] | undefined)?.[0]}`);
+  return [...flat.formErrors, ...fieldParts].join(", ") || "Validation failed";
+}
+
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string; itemId: string }> }) {
   try {
     const { id, itemId } = await ctx.params;
@@ -45,7 +51,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const body = await req.json();
     const parsed = updateSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
+    if (!parsed.success) return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 422 });
 
     const item = await prisma.catalogItem.update({ where: { id: itemId }, data: parsed.data });
     return NextResponse.json({ item });

@@ -53,22 +53,30 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
+
 const createSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["HOSTED", "PUNCHOUT"]),
-  description: z.string().optional(),
-  supplierId: z.string().optional(),
-  punchoutUrl: z.string().url().optional(),
-  cxmlFromDomain: z.string().optional(),
-  cxmlFromIdentity: z.string().optional(),
-  cxmlToDomain: z.string().optional(),
-  cxmlToIdentity: z.string().optional(),
-  cxmlSenderDomain: z.string().optional(),
-  cxmlSenderIdentity: z.string().optional(),
-  cxmlSharedSecret: z.string().optional(),
+  description: z.preprocess(emptyToUndefined, z.string().optional()),
+  supplierId: z.preprocess(emptyToUndefined, z.string().optional()),
+  punchoutUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  cxmlFromDomain: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlFromIdentity: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlToDomain: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlToIdentity: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlSenderDomain: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlSenderIdentity: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlSharedSecret: z.preprocess(emptyToUndefined, z.string().optional()),
 }).refine(d => d.type !== "PUNCHOUT" || !!d.punchoutUrl, {
   message: "punchoutUrl is required for punchout catalogs",
 });
+
+function zodErrorMessage(err: z.ZodError): string {
+  const flat = err.flatten();
+  const fieldParts = Object.entries(flat.fieldErrors).map(([k, v]) => `${k}: ${(v as string[] | undefined)?.[0]}`);
+  return [...flat.formErrors, ...fieldParts].join(", ") || "Validation failed";
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -77,7 +85,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const parsed = createSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
+    if (!parsed.success) return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 422 });
     const d = parsed.data;
 
     const catalog = await prisma.catalog.create({

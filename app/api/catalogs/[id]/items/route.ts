@@ -47,6 +47,12 @@ const createItemSchema = z.object({
   description: z.string().optional(),
 });
 
+function zodErrorMessage(err: z.ZodError): string {
+  const flat = err.flatten();
+  const fieldParts = Object.entries(flat.fieldErrors).map(([k, v]) => `${k}: ${(v as string[] | undefined)?.[0]}`);
+  return [...flat.formErrors, ...fieldParts].join(", ") || "Validation failed";
+}
+
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
@@ -60,7 +66,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     const body = await req.json();
     const parsed = createItemSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
+    if (!parsed.success) return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 422 });
     const d = parsed.data;
 
     const { sku, ...updateData } = d;

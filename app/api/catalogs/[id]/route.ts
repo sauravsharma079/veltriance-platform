@@ -40,19 +40,27 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
 }
 
+const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
+
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
-  description: z.string().optional(),
-  punchoutUrl: z.string().url().optional(),
-  cxmlFromDomain: z.string().optional(),
-  cxmlFromIdentity: z.string().optional(),
-  cxmlToDomain: z.string().optional(),
-  cxmlToIdentity: z.string().optional(),
-  cxmlSenderDomain: z.string().optional(),
-  cxmlSenderIdentity: z.string().optional(),
-  cxmlSharedSecret: z.string().optional(),
+  description: z.preprocess(emptyToUndefined, z.string().optional()),
+  punchoutUrl: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  cxmlFromDomain: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlFromIdentity: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlToDomain: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlToIdentity: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlSenderDomain: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlSenderIdentity: z.preprocess(emptyToUndefined, z.string().optional()),
+  cxmlSharedSecret: z.preprocess(emptyToUndefined, z.string().optional()),
 });
+
+function zodErrorMessage(err: z.ZodError): string {
+  const flat = err.flatten();
+  const fieldParts = Object.entries(flat.fieldErrors).map(([k, v]) => `${k}: ${(v as string[] | undefined)?.[0]}`);
+  return [...flat.formErrors, ...fieldParts].join(", ") || "Validation failed";
+}
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -65,7 +73,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const body = await req.json();
     const parsed = updateSchema.safeParse(body);
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
+    if (!parsed.success) return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 422 });
 
     const catalog = await prisma.catalog.update({ where: { id }, data: parsed.data, select: CATALOG_SELECT });
     return NextResponse.json({ catalog });
