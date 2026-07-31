@@ -25,14 +25,30 @@ export async function POST(req: NextRequest) {
         const name = (row.name || row.Name || row.description || "").trim();
         if (!name) { results.errors.push("Row skipped: missing name"); continue; }
         const finalSku = sku || `ITEM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+        const category = (row.category || row.Category || "").trim();
+        const unit = (row.unit || "").trim();
+        const leadDaysRaw = row.leadDays || row.lead_days || "";
+        const supplierName = (row.supplier || row.supplierName || row.supplier_name || "").trim();
+
+        if (!category) { results.errors.push(`Row "${name}": missing category`); continue; }
+        if (!unit) { results.errors.push(`Row "${name}": missing unit`); continue; }
+        if (!leadDaysRaw) { results.errors.push(`Row "${name}": missing leadDays`); continue; }
+        if (!supplierName) { results.errors.push(`Row "${name}": missing supplier`); continue; }
+
+        const supplier = await prisma.supplier.findFirst({
+          where: { organizationId, name: { contains: supplierName, mode: "insensitive" } },
+        });
+        if (!supplier) { results.errors.push(`Row "${name}": no supplier found matching "${supplierName}"`); continue; }
+
         const data = {
           name,
           unitPrice: parseFloat(row.unitPrice || row.unit_price || row.price || "0") || 0,
           currency: row.currency || "INR",
-          category: row.category || row.Category || null,
-          glAccount: row.gl || row.glAccount || row.gl_account || null,
-          unit: row.unit || null,
-          leadDays: (row.leadDays || row.lead_days) ? parseInt(row.leadDays || row.lead_days) : null,
+          category,
+          supplierId: supplier.id,
+          unit,
+          leadDays: parseInt(leadDaysRaw),
           description: row.description || row.desc || null,
         };
         const existing = await prisma.catalogItem.findUnique({ where: { catalogId_sku: { catalogId, sku: finalSku } } });

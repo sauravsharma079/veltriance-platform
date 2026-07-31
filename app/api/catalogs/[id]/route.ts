@@ -23,7 +23,7 @@ const CATALOG_SELECT = {
   punchoutUrl: true, cxmlFromDomain: true, cxmlFromIdentity: true,
   cxmlToDomain: true, cxmlToIdentity: true, cxmlSenderDomain: true, cxmlSenderIdentity: true,
   createdAt: true, updatedAt: true,
-  items: { where: { active: true }, orderBy: { name: "asc" as const } },
+  items: { where: { active: true }, orderBy: { name: "asc" as const }, include: { supplier: { select: { name: true } } } },
 };
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {

@@ -7,12 +7,12 @@ import { Sparkles, X, Send, CheckCircle2, AlertCircle, Loader2, ChevronRight, Pe
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: string };
+type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: string; options?: string[] };
 type Item = { id: string; [k: string]: unknown };
 type Mode = "idle" | "create" | "edit";
 
-type CreateKind = "user" | "role" | "group" | "lookup" | "coa" | "approval" | "field";
-type EditKind = "user" | "role" | "group" | "lookup" | "approval" | "field";
+type CreateKind = "user" | "role" | "group" | "lookup" | "coa" | "approval" | "field" | "catalog";
+type EditKind = "user" | "role" | "group" | "lookup" | "approval" | "field" | "catalog";
 
 interface CreateState {
   mode: "create";
@@ -22,6 +22,10 @@ interface CreateState {
   segments?: string[];
   segIdx?: number;
   steps?: string[];
+  catalogId?: string;
+  suppliers?: { id: string; name: string }[];
+  categories?: string[];
+  items?: { sku: string; name: string }[];
 }
 
 interface EditState {
@@ -47,6 +51,7 @@ const CREATE_ACTIONS: { label: string; kind: CreateKind; desc: string }[] = [
   { label: "Set up a COA",         kind: "coa",      desc: "Chart of accounts with segments" },
   { label: "Build approval chain", kind: "approval", desc: "Conditions + multi-step routing" },
   { label: "Add custom field",     kind: "field",    desc: "Extend forms" },
+  { label: "Create catalog or punchout", kind: "catalog", desc: "Hosted catalog with items, or a punchout connection" },
 ];
 
 const EDIT_ACTIONS: { label: string; kind: EditKind; desc: string }[] = [
@@ -56,12 +61,18 @@ const EDIT_ACTIONS: { label: string; kind: EditKind; desc: string }[] = [
   { label: "Edit a lookup type",   kind: "lookup",   desc: "Add values to an existing type" },
   { label: "Edit approval chain",  kind: "approval", desc: "Update conditions or steps" },
   { label: "Edit a custom field",  kind: "field",    desc: "Toggle active, required, or label" },
+  { label: "Edit a catalog",       kind: "catalog",  desc: "Add items, toggle active, edit connection" },
 ];
 
 const CREATE_FIRST_STEP: Record<CreateKind, string> = {
   user: "name", role: "name", group: "name", lookup: "type_name",
-  coa: "name", approval: "name", field: "entity",
+  coa: "name", approval: "name", field: "entity", catalog: "catalog_type",
 };
+
+const FALLBACK_CATEGORIES = [
+  "IT Hardware", "Software & Licenses", "Cloud Services", "Consulting Services",
+  "Office Supplies", "Facilities", "Logistics", "Marketing", "Professional Services", "Other",
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error helper
@@ -92,9 +103,11 @@ async function fetchEditItems(kind: EditKind): Promise<Item[]> {
   const map: Record<EditKind, string> = {
     user: "/api/admin/users", role: "/api/admin/roles", group: "/api/admin/content-groups",
     lookup: "/api/admin/lookups", approval: "/api/admin/approval-rules", field: "/api/admin/custom-fields",
+    catalog: "/api/catalogs",
   };
   const key: Record<EditKind, string> = {
     user: "users", role: "roles", group: "groups", lookup: "lookups", approval: "rules", field: "fields",
+    catalog: "catalogs",
   };
   try {
     const d = await fetch(map[kind]).then(r => r.json());
@@ -108,6 +121,7 @@ function describeItem(kind: EditKind, item: Item, idx: number): string {
   if (kind === "lookup")   return `**${idx + 1}.** ${item.type} (${(item as { _count?: number })._count ?? ""})`;
   if (kind === "approval") return `**${idx + 1}.** ${name} ${item.active ? "✓ active" : "✗ inactive"}`;
   if (kind === "field")    return `**${idx + 1}.** ${name} [${item.entity ?? ""}] ${item.active ? "✓ active" : "✗ inactive"}`;
+  if (kind === "catalog")  return `**${idx + 1}.** ${name} [${item.type}] — ${(item as { _count?: { items?: number } })._count?.items ?? 0} items ${item.status === "ACTIVE" ? "✓ active" : "✗ inactive"}`;
   return `**${idx + 1}.** ${name}`;
 }
 
@@ -156,6 +170,14 @@ function fieldChoices(kind: EditKind, item: Item): { key: string; label: string;
       { key: "required", label: "Required",       current: item.required ? "yes" : "no" },
       { key: "toggle",   label: "Toggle active",  current: item.active ? "active" : "inactive" },
     ];
+  }
+  if (kind === "catalog") {
+    const choices: { key: string; label: string; current: string }[] = [];
+    if (item.type === "HOSTED") choices.push({ key: "add_items", label: "Add item(s)", current: `${(item as { _count?: { items?: number } })._count?.items ?? 0} items` });
+    choices.push({ key: "toggle", label: "Toggle active", current: item.status === "ACTIVE" ? "active" : "inactive" });
+    choices.push({ key: "description", label: "Description", current: String(item.description ?? "—") });
+    if (item.type === "PUNCHOUT") choices.push({ key: "punchoutUrl", label: "Punchout URL", current: String(item.punchoutUrl ?? "—") });
+    return choices;
   }
   return [];
 }
@@ -286,6 +308,18 @@ async function applyEdit(kind: EditKind, item: Item, field: string, value: strin
     }
   }
 
+  if (kind === "catalog") {
+    if (field === "toggle") {
+      const res = await fetch(`/api/catalogs/${item.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: item.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" }) });
+      return res.ok ? { ok: true } : { ok: false, error: errStr(await res.json()) };
+    }
+    if (field === "description" || field === "punchoutUrl") {
+      const res = await fetch(`/api/catalogs/${item.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: value }) });
+      const d = await res.json();
+      return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
+    }
+  }
+
   return { ok: false, error: "Unsupported field." };
 }
 
@@ -382,6 +416,33 @@ async function createField(data: Record<string,string>): Promise<{ ok: boolean; 
   return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
 }
 
+async function createCatalogRecord(payload: Record<string, string | undefined>): Promise<{ ok: boolean; catalogId?: string; error?: string }> {
+  const res = await fetch("/api/catalogs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const d = await res.json();
+  return res.ok ? { ok: true, catalogId: d.catalog?.id } : { ok: false, error: errStr(d) };
+}
+
+async function createCatalogItem(catalogId: string, payload: Record<string, string>): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/catalogs/${catalogId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const d = await res.json();
+  return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
+}
+
+async function fetchCategoryOptions(): Promise<string[]> {
+  try {
+    const d = await fetch("/api/admin/lookups?type=CATEGORY").then(r => r.json());
+    const labels = Array.isArray(d?.lookups) ? d.lookups.map((l: { label: string }) => l.label) : [];
+    return labels.length ? labels : FALLBACK_CATEGORIES;
+  } catch { return FALLBACK_CATEGORIES; }
+}
+
+async function fetchSupplierOptions(): Promise<{ id: string; name: string }[]> {
+  try {
+    const d = await fetch("/api/suppliers?status=ACTIVE&limit=200").then(r => r.json());
+    return Array.isArray(d?.suppliers) ? d.suppliers.map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })) : [];
+  } catch { return []; }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Create-flow step questions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -431,7 +492,39 @@ function createQuestion(state: CreateState): string {
     if (step === "fieldtype") return "Type? **TEXT** · **NUMBER** · **DATE** · **DROPDOWN** · **CHECKBOX** · **TEXTAREA**";
     if (step === "required")  return "Required? (**yes** / **no**)";
   }
+  if (kind === "catalog") {
+    if (step === "catalog_type")    return "Let's set up a **catalog**. Would you like a **Hosted Catalog** (you manage items directly) or a **Punchout Connection** (supplier's live catalog)?";
+    if (step === "name")            return "What should this catalog be called?";
+    if (step === "description")     return `Got it — **${data.name}**. Give it a short **description**.`;
+    if (step === "item_sku")        return "Item **SKU**? (or type **done** to finish without adding items)";
+    if (step === "item_name")       return "Item **name**?";
+    if (step === "item_price")      return "**Unit price**?";
+    if (step === "item_currency")   return "**Currency**? (Enter for INR)";
+    if (step === "item_category")   return "**Category**?";
+    if (step === "item_unit")       return "**Unit of measure**? (e.g. Each, Box, Kg, License, Hour)";
+    if (step === "item_leaddays")   return "**Lead time** in days?";
+    if (step === "item_supplier")   return "Which **supplier** provides this item?";
+    if (step === "item_more")       return `Add another item or type **done**.\n\nSo far: ${(state.items ?? []).map(i => i.name).join(", ") || "none"}`;
+    if (step === "p_name")          return "What should this punchout connection be called?";
+    if (step === "p_supplier")      return "Which **supplier** is this punchout with? (or type **skip**)";
+    if (step === "p_url")           return "**Punchout URL**? (the supplier's cXML PunchOutSetupRequest endpoint)";
+    if (step === "p_from_identity") return "Your **buyer identity** (cXML From identity)?";
+    if (step === "p_to_identity")   return "Supplier's **cXML To identity**?";
+    if (step === "p_secret")        return "**Shared secret** provided by the supplier?";
+  }
   return "";
+}
+
+function createStepOptions(state: CreateState): string[] | undefined {
+  if (state.kind !== "catalog") return undefined;
+  const { step } = state;
+  if (step === "catalog_type")  return ["Hosted Catalog", "Punchout Connection"];
+  if (step === "item_currency") return ["INR", "USD", "EUR", "GBP"];
+  if (step === "item_category") return state.categories;
+  if (step === "item_unit")     return ["Each", "Box", "Kg", "License", "Hour"];
+  if (step === "item_supplier") return (state.suppliers ?? []).map((s, i) => `${i + 1}. ${s.name}`);
+  if (step === "p_supplier")    return [...(state.suppliers ?? []).map((s, i) => `${i + 1}. ${s.name}`), "Skip"];
+  return undefined;
 }
 
 const CREATE_NEXT_STEP: Record<CreateKind, Record<string, string>> = {
@@ -442,24 +535,33 @@ const CREATE_NEXT_STEP: Record<CreateKind, Record<string, string>> = {
   coa:      { name: "code", code: "company", company: "currency", currency: "segments" },
   approval: { name: "amount", amount: "steps", steps: "more_steps" },
   field:    { entity: "label", label: "fieldtype", fieldtype: "required" },
+  catalog:  {
+    catalog_type: "name", name: "description", description: "item_sku",
+    item_sku: "item_name", item_name: "item_price", item_price: "item_currency",
+    item_currency: "item_category", item_category: "item_unit", item_unit: "item_leaddays",
+    item_leaddays: "item_supplier", item_supplier: "item_more", item_more: "item_sku",
+    p_name: "p_supplier", p_supplier: "p_url", p_url: "p_from_identity",
+    p_from_identity: "p_to_identity", p_to_identity: "p_secret",
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function AdminAgent({ onRefresh }: { onRefresh: () => void }) {
+export function AdminAgent({ onRefresh, openSignal }: { onRefresh: () => void; openSignal?: number }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("idle");
   const [panelTab, setPanelTab] = useState<"create" | "edit">("create");
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "agent", text: "Hi! I can **create** or **edit** any admin configuration — users, roles, content groups, lookups, charts of accounts, approval chains, and custom fields. Choose Create or Edit below." },
+    { role: "agent", text: "Hi! I can **create** or **edit** any admin configuration — users, roles, content groups, lookups, charts of accounts, approval chains, custom fields, and catalogs/punchout connections. Choose Create or Edit below." },
   ]);
   const [flow, setFlow] = useState<FlowState>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const openSignalRef = useRef(openSignal);
 
   useEffect(() => {
     if (open) {
@@ -467,6 +569,13 @@ export function AdminAgent({ onRefresh }: { onRefresh: () => void }) {
       inputRef.current?.focus();
     }
   }, [messages, open]);
+
+  useEffect(() => {
+    if (openSignal !== undefined && openSignal !== openSignalRef.current) {
+      openSignalRef.current = openSignal;
+      setOpen(true);
+    }
+  }, [openSignal]);
 
   const addMsg = useCallback((m: Msg[]) => setMessages(p => [...p, ...m]), []);
 
@@ -482,7 +591,13 @@ export function AdminAgent({ onRefresh }: { onRefresh: () => void }) {
     const state: CreateState = { mode: "create", kind, step, data: {}, segments: [], segIdx: 0, steps: [] };
     setFlow(state);
     setMode("create");
-    addMsg([{ role: "agent", text: createQuestion(state) }]);
+    addMsg([{ role: "agent", text: createQuestion(state), options: createStepOptions(state) }]);
+  }
+
+  function handleOption(opt: string) {
+    if (busy) return;
+    addMsg([{ role: "user", text: opt }]);
+    handleSend(opt);
   }
 
   // ── Start an edit flow ──────────────────────────────────────────────────
@@ -564,6 +679,11 @@ export function AdminAgent({ onRefresh }: { onRefresh: () => void }) {
             addMsg([{ role: "error", text: result.error ?? "Update failed." }]);
             resetToIdle();
           }
+        } else if (field === "add_items") {
+          const catState: CreateState = { mode: "create", kind: "catalog", step: "item_sku", data: { name: String(selected.name) }, catalogId: String(selected.id), items: [] };
+          setFlow(catState);
+          setMode("create");
+          addMsg([{ role: "agent", text: `Adding items to **${selected.name}**. ${createQuestion(catState)}` }]);
         } else {
           const nextState: EditState = { ...ef, step: "value", field };
           setFlow(nextState);
@@ -742,6 +862,167 @@ export function AdminAgent({ onRefresh }: { onRefresh: () => void }) {
           else { addMsg([{ role: "error", text: result.error ?? "Failed." }]); resetToIdle(); }
         }
       }
+
+      // ── CATALOG / PUNCHOUT ──
+      else if (kind === "catalog") {
+        if (step === "catalog_type") {
+          const isPunchout = text.toLowerCase().includes("punch");
+          const nextState: CreateState = { ...cf, step: isPunchout ? "p_name" : "name", data: { ...data, type: isPunchout ? "PUNCHOUT" : "HOSTED" } };
+          setFlow(nextState);
+          addMsg([{ role: "agent", text: createQuestion(nextState), options: createStepOptions(nextState) }]);
+        }
+
+        // Hosted branch
+        else if (step === "name") advanceCreate(cf, "description", { ...data, name: text });
+        else if (step === "description") {
+          if (!text.trim()) { addMsg([{ role: "agent", text: "Description is required for a hosted catalog." }]); setBusy(false); return; }
+          addMsg([{ role: "loading", text: `Creating catalog **${data.name}**…` }]);
+          const result = await createCatalogRecord({ name: data.name, type: "HOSTED", description: text.trim() });
+          setMessages(p => p.filter(m => m.role !== "loading"));
+          if (!result.ok) { addMsg([{ role: "error", text: result.error ?? "Failed to create catalog." }]); resetToIdle(); }
+          else {
+            const nextState: CreateState = { ...cf, step: "item_sku", data: { ...data, description: text.trim() }, catalogId: result.catalogId, items: [] };
+            setFlow(nextState);
+            addMsg([{ role: "success", text: `✓ Catalog **${data.name}** created.` }]);
+            addMsg([{ role: "agent", text: createQuestion(nextState) }]);
+          }
+        }
+        else if (step === "item_sku") {
+          if (text.toLowerCase() === "done") finishCatalogFlow(cf);
+          else if (!text.trim()) { addMsg([{ role: "agent", text: "SKU is required (or type done)." }]); setBusy(false); return; }
+          else advanceCreate(cf, "item_name", { ...data, sku: text.trim() });
+        }
+        else if (step === "item_name") {
+          if (!text.trim()) { addMsg([{ role: "agent", text: "Item name is required." }]); setBusy(false); return; }
+          advanceCreate(cf, "item_price", { ...data, itemName: text.trim() });
+        }
+        else if (step === "item_price") {
+          const price = parseFloat(text);
+          if (isNaN(price) || price < 0) { addMsg([{ role: "agent", text: "Please enter a valid price." }]); setBusy(false); return; }
+          advanceCreate(cf, "item_currency", { ...data, price: text });
+        }
+        else if (step === "item_currency") {
+          const currency = (text.trim() || "INR").toUpperCase();
+          let categories = cf.categories;
+          if (!categories) {
+            addMsg([{ role: "loading", text: "Loading categories…" }]);
+            categories = await fetchCategoryOptions();
+            setMessages(p => p.filter(m => m.role !== "loading"));
+          }
+          const nextState: CreateState = { ...cf, step: "item_category", data: { ...data, currency }, categories };
+          setFlow(nextState);
+          addMsg([{ role: "agent", text: createQuestion(nextState), options: categories }]);
+        }
+        else if (step === "item_category") {
+          if (!text.trim()) { addMsg([{ role: "agent", text: "Category is required." }]); setBusy(false); return; }
+          advanceCreate(cf, "item_unit", { ...data, category: text.trim() });
+        }
+        else if (step === "item_unit") {
+          if (!text.trim()) { addMsg([{ role: "agent", text: "Unit is required." }]); setBusy(false); return; }
+          advanceCreate(cf, "item_leaddays", { ...data, unit: text.trim() });
+        }
+        else if (step === "item_leaddays") {
+          const days = parseInt(text);
+          if (isNaN(days) || days < 0) { addMsg([{ role: "agent", text: "Please enter a valid number of days." }]); setBusy(false); return; }
+          let suppliers = cf.suppliers;
+          if (!suppliers) {
+            addMsg([{ role: "loading", text: "Loading suppliers…" }]);
+            suppliers = await fetchSupplierOptions();
+            setMessages(p => p.filter(m => m.role !== "loading"));
+          }
+          if (suppliers.length === 0) {
+            addMsg([{ role: "error", text: "No active suppliers found. Add a supplier first, then resume this catalog from Edit → Add item(s)." }]);
+            resetToIdle();
+            setBusy(false); return;
+          }
+          const nextState: CreateState = { ...cf, step: "item_supplier", data: { ...data, leaddays: text }, suppliers };
+          setFlow(nextState);
+          addMsg([{ role: "agent", text: createQuestion(nextState), options: suppliers.map((s, i) => `${i + 1}. ${s.name}`) }]);
+        }
+        else if (step === "item_supplier") {
+          const suppliers = cf.suppliers ?? [];
+          const num = parseInt(text);
+          const match = !isNaN(num) ? suppliers[num - 1] : suppliers.find(s => s.name.toLowerCase().includes(text.toLowerCase()));
+          if (!match) {
+            addMsg([{ role: "agent", text: `Please pick a supplier from the list (1-${suppliers.length}).`, options: suppliers.map((s, i) => `${i + 1}. ${s.name}`) }]);
+            setBusy(false); return;
+          }
+          addMsg([{ role: "loading", text: `Adding item **${data.itemName}**…` }]);
+          const result = await createCatalogItem(cf.catalogId!, {
+            sku: data.sku, name: data.itemName, unitPrice: data.price, currency: data.currency || "INR",
+            category: data.category, unit: data.unit, leadDays: data.leaddays, supplierId: match.id,
+          });
+          setMessages(p => p.filter(m => m.role !== "loading"));
+          if (!result.ok) { addMsg([{ role: "error", text: result.error ?? "Failed to add item." }]); setBusy(false); return; }
+          const newItems = [...(cf.items ?? []), { sku: data.sku, name: data.itemName }];
+          const nextState: CreateState = { ...cf, step: "item_more", items: newItems, data: { ...data, supplier: match.name } };
+          setFlow(nextState);
+          onRefresh();
+          addMsg([{ role: "success", text: `✓ Added **${data.itemName}** (${data.sku}). ${newItems.length} item${newItems.length !== 1 ? "s" : ""} so far.` }]);
+          addMsg([{ role: "agent", text: createQuestion(nextState) }]);
+        }
+        else if (step === "item_more") {
+          if (text.toLowerCase() === "done") finishCatalogFlow(cf);
+          else {
+            const nextState: CreateState = { ...cf, step: "item_sku", data: { ...data, sku: "", itemName: "", price: "", currency: "", category: "", unit: "", leaddays: "", supplier: "" } };
+            setFlow(nextState);
+            addMsg([{ role: "agent", text: createQuestion(nextState) }]);
+          }
+        }
+
+        // Punchout branch
+        else if (step === "p_name") {
+          let suppliers = cf.suppliers;
+          if (!suppliers) {
+            addMsg([{ role: "loading", text: "Loading suppliers…" }]);
+            suppliers = await fetchSupplierOptions();
+            setMessages(p => p.filter(m => m.role !== "loading"));
+          }
+          const nextState: CreateState = { ...cf, step: "p_supplier", data: { ...data, name: text }, suppliers };
+          setFlow(nextState);
+          addMsg([{ role: "agent", text: createQuestion(nextState), options: createStepOptions(nextState) }]);
+        }
+        else if (step === "p_supplier") {
+          const suppliers = cf.suppliers ?? [];
+          let supplierId = "";
+          let supplierName = "";
+          if (text.toLowerCase() !== "skip") {
+            const num = parseInt(text);
+            const match = !isNaN(num) ? suppliers[num - 1] : suppliers.find(s => s.name.toLowerCase().includes(text.toLowerCase()));
+            if (!match) {
+              addMsg([{ role: "agent", text: "Please pick a supplier from the list, or type skip.", options: createStepOptions(cf) }]);
+              setBusy(false); return;
+            }
+            supplierId = match.id; supplierName = match.name;
+          }
+          advanceCreate(cf, "p_url", { ...data, supplierId, supplierName });
+        }
+        else if (step === "p_url") {
+          if (!/^https?:\/\//i.test(text.trim())) { addMsg([{ role: "agent", text: "Please enter a valid URL starting with http(s)://" }]); setBusy(false); return; }
+          advanceCreate(cf, "p_from_identity", { ...data, url: text.trim() });
+        }
+        else if (step === "p_from_identity") {
+          if (!text.trim()) { addMsg([{ role: "agent", text: "Buyer identity is required." }]); setBusy(false); return; }
+          advanceCreate(cf, "p_to_identity", { ...data, fromIdentity: text.trim() });
+        }
+        else if (step === "p_to_identity") {
+          if (!text.trim()) { addMsg([{ role: "agent", text: "Supplier identity is required." }]); setBusy(false); return; }
+          advanceCreate(cf, "p_secret", { ...data, toIdentity: text.trim() });
+        }
+        else if (step === "p_secret") {
+          if (!text.trim()) { addMsg([{ role: "agent", text: "Shared secret is required." }]); setBusy(false); return; }
+          addMsg([{ role: "loading", text: `Creating punchout connection **${data.name}**…` }]);
+          const result = await createCatalogRecord({
+            name: data.name, type: "PUNCHOUT",
+            supplierId: data.supplierId || undefined,
+            punchoutUrl: data.url, cxmlFromIdentity: data.fromIdentity, cxmlToIdentity: data.toIdentity,
+            cxmlSharedSecret: text.trim(),
+          });
+          setMessages(p => p.filter(m => m.role !== "loading"));
+          if (result.ok) { addMsg([{ role: "success", text: `✓ Punchout connection **${data.name}** created.` }]); onRefresh(); resetToIdle(); }
+          else { addMsg([{ role: "error", text: result.error ?? "Failed." }]); resetToIdle(); }
+        }
+      }
     }
 
     setBusy(false);
@@ -750,7 +1031,13 @@ export function AdminAgent({ onRefresh }: { onRefresh: () => void }) {
   function advanceCreate(cf: CreateState, nextStep: string, newData: Record<string, string>) {
     const nextState: CreateState = { ...cf, step: nextStep, data: newData };
     setFlow(nextState);
-    addMsg([{ role: "agent", text: createQuestion(nextState) }]);
+    addMsg([{ role: "agent", text: createQuestion(nextState), options: createStepOptions(nextState) }]);
+  }
+
+  function finishCatalogFlow(cf: CreateState) {
+    const count = (cf.items ?? []).length;
+    onRefresh();
+    resetToIdle(`✓ Catalog **${cf.data.name}** is ready${count > 0 ? ` with ${count} item${count !== 1 ? "s" : ""}` : ""}. What else would you like to do?`);
   }
 
   function renderText(text: string) {
@@ -893,18 +1180,35 @@ export function AdminAgent({ onRefresh }: { onRefresh: () => void }) {
                     <span>{String(msg.text ?? "").replace(/\*\*([^*]+)\*\*/g, "$1")}</span>
                   </div>
                 ) : (
-                  <div
-                    className={`max-w-[85%] px-3 py-2.5 rounded-2xl text-xs leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-[#1A2A52] text-white rounded-br-sm"
-                        : msg.role === "success"
-                        ? "bg-green-50 border border-green-200 text-green-800 rounded-bl-sm"
-                        : msg.role === "error"
-                        ? "bg-red-50 border border-red-200 text-red-700 rounded-bl-sm"
-                        : "bg-gray-100 text-gray-800 rounded-bl-sm"
-                    }`}
-                  >
-                    {renderText(msg.text)}
+                  <div className="max-w-[85%] min-w-0">
+                    <div
+                      className={`px-3 py-2.5 rounded-2xl text-xs leading-relaxed ${
+                        msg.role === "user"
+                          ? "bg-[#1A2A52] text-white rounded-br-sm"
+                          : msg.role === "success"
+                          ? "bg-green-50 border border-green-200 text-green-800 rounded-bl-sm"
+                          : msg.role === "error"
+                          ? "bg-red-50 border border-red-200 text-red-700 rounded-bl-sm"
+                          : "bg-gray-100 text-gray-800 rounded-bl-sm"
+                      }`}
+                    >
+                      {renderText(msg.text)}
+                    </div>
+                    {msg.options && msg.options.length > 0 && (
+                      <div className="mt-1.5 space-y-1">
+                        {msg.options.map((opt, oi) => (
+                          <button
+                            key={oi}
+                            onClick={() => handleOption(opt)}
+                            disabled={busy}
+                            className="flex items-center gap-1.5 w-full text-left text-[11px] font-medium bg-white border border-gray-200 hover:border-[#1A2A52] hover:bg-[#1A2A52]/5 text-gray-700 hover:text-[#1A2A52] px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                          >
+                            <ChevronRight className="size-3 text-[#1A2A52]/50 shrink-0" />
+                            <span className="truncate">{opt}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

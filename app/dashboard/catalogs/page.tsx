@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, ShoppingCart, ExternalLink, Package, Zap, X, Check, Layers, AlertCircle } from "lucide-react";
 
-type CatalogItem = { id:string; sku:string; name:string; unitPrice:string; currency:string; category:string|null; glAccount:string|null; unit:string|null; leadDays:number|null; description:string|null; };
+type CatalogItem = { id:string; sku:string; name:string; unitPrice:string; currency:string; category:string|null; supplierId:string|null; supplier:{name:string}|null; unit:string|null; leadDays:number|null; description:string|null; };
 type Catalog = { id:string; name:string; type:string; status:string; description:string|null; supplier:{name:string}|null; punchoutUrl:string|null; items?:CatalogItem[]; _count:{items:number}; };
 type CartItem = CatalogItem & { catalogId:string; catalogName:string };
 
@@ -73,7 +73,7 @@ export default function CatalogsPage() {
           description: `${ci.name} [${ci.sku}]`,
           quantity: quantities[ci.id] || 1,
           unitPrice: Number(ci.unitPrice),
-          glAccount: ci.glAccount || undefined,
+          supplierId: ci.supplierId || undefined,
           category: ci.category || undefined,
         })),
       };
@@ -214,7 +214,7 @@ export default function CatalogsPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-gray-900 truncate">{item.name}</p>
-                          <p className="text-[10px] text-gray-400">{item.sku}{item.category ? ` · ${item.category}` : ""}{item.glAccount ? ` · GL: ${item.glAccount}` : ""}{item.leadDays != null ? ` · ${item.leadDays}d lead time` : ""}</p>
+                          <p className="text-[10px] text-gray-400">{item.sku}{item.category ? ` · ${item.category}` : ""}{item.supplier ? ` · ${item.supplier.name}` : ""}{item.leadDays != null ? ` · ${item.leadDays}d lead time` : ""}</p>
                           {item.description && <p className="text-[10px] text-gray-300 truncate">{item.description}</p>}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -252,7 +252,7 @@ export default function CatalogsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-gray-900">{item.name}</p>
                     <p className="text-[10px] text-gray-400">{item.sku} · {item.catalogName}</p>
-                    {item.glAccount && <p className="text-[10px] text-gray-400">GL: {item.glAccount}{item.category ? ` · ${item.category}` : ""}</p>}
+                    {item.supplier && <p className="text-[10px] text-gray-400">{item.supplier.name}{item.category ? ` · ${item.category}` : ""}</p>}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white">

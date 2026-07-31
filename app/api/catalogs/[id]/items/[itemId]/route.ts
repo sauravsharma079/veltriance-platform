@@ -27,7 +27,7 @@ const updateSchema = z.object({
   unitPrice: z.coerce.number().nonnegative().optional(),
   currency: z.string().optional(),
   category: z.string().optional(),
-  glAccount: z.string().optional(),
+  supplierId: z.string().optional(),
   unit: z.string().optional(),
   leadDays: z.coerce.number().int().nonnegative().optional(),
   description: z.string().optional(),

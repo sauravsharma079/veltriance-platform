@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
       { name: "List Hosted Catalog Items", request: bearer(baseUrl, "/api/catalogs/{{catalogId}}/items") },
       { name: "Bulk Upload Catalog Items", request: bearer(baseUrl, "/api/upload/catalog-items", "POST", {
         catalogId: "{{catalogId}}",
-        rows: [{ sku: "ITEM-001", name: "Dell XPS 15 Laptop", unitPrice: "125000", currency: "INR", category: "IT Hardware", gl: "6100", unit: "Each", leadDays: "7", description: "Dell XPS 15 9530 16GB 512GB" }],
+        rows: [{ sku: "ITEM-001", name: "Dell XPS 15 Laptop", unitPrice: "125000", currency: "INR", category: "IT Hardware", supplier: "Dell Technologies", unit: "Each", leadDays: "7", description: "Dell XPS 15 9530 16GB 512GB" }],
       }) },
     ],
   };

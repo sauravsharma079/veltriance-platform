@@ -28,7 +28,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     const { offset, limit } = parsePagination(req);
     const [items, total] = await Promise.all([
-      prisma.catalogItem.findMany({ where: { catalogId: id }, orderBy: { name: "asc" }, skip: offset, take: limit }),
+      prisma.catalogItem.findMany({
+        where: { catalogId: id }, orderBy: { name: "asc" }, skip: offset, take: limit,
+        include: { supplier: { select: { name: true } } },
+      }),
       prisma.catalogItem.count({ where: { catalogId: id } }),
     ]);
     return NextResponse.json({ items, ...pagMeta(total, offset, limit, `/api/catalogs/${id}/items`) });
@@ -38,12 +41,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 const createItemSchema = z.object({
   sku: z.string().min(1),
   name: z.string().min(1),
-  unitPrice: z.coerce.number().nonnegative().default(0),
-  currency: z.string().default("INR"),
-  category: z.string().optional(),
-  glAccount: z.string().optional(),
-  unit: z.string().optional(),
-  leadDays: z.coerce.number().int().nonnegative().optional(),
+  unitPrice: z.coerce.number().nonnegative(),
+  currency: z.string().min(1),
+  category: z.string().min(1),
+  supplierId: z.string().min(1),
+  unit: z.string().min(1),
+  leadDays: z.coerce.number().int().nonnegative(),
   description: z.string().optional(),
 });
 
@@ -69,11 +72,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!parsed.success) return NextResponse.json({ error: zodErrorMessage(parsed.error) }, { status: 422 });
     const d = parsed.data;
 
+    const supplier = await prisma.supplier.findFirst({ where: { id: d.supplierId, organizationId: adminCtx.organization.id } });
+    if (!supplier) return NextResponse.json({ error: "Supplier not found" }, { status: 422 });
+
     const { sku, ...updateData } = d;
     const item = await prisma.catalogItem.upsert({
       where: { catalogId_sku: { catalogId: id, sku } },
       update: updateData,
       create: { catalogId: id, sku, ...updateData },
+      include: { supplier: { select: { name: true } } },
     });
     return NextResponse.json({ item }, { status: 201 });
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }

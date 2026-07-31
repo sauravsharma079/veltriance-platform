@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
         ...(type ? { type: type as any } : {}),
         ...(status ? { status: status as any } : {}),
       },
-      select: includeItems ? { ...CATALOG_SELECT, items: { where: { active: true }, orderBy: { name: "asc" } } } : CATALOG_SELECT,
+      select: includeItems
+        ? { ...CATALOG_SELECT, items: { where: { active: true }, orderBy: { name: "asc" }, include: { supplier: { select: { name: true } } } } }
+        : CATALOG_SELECT,
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ catalogs });
@@ -70,6 +72,8 @@ const createSchema = z.object({
   cxmlSharedSecret: z.preprocess(emptyToUndefined, z.string().optional()),
 }).refine(d => d.type !== "PUNCHOUT" || !!d.punchoutUrl, {
   message: "punchoutUrl is required for punchout catalogs",
+}).refine(d => d.type !== "HOSTED" || !!d.description, {
+  message: "description is required for hosted catalogs",
 });
 
 function zodErrorMessage(err: z.ZodError): string {
