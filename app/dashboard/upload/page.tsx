@@ -46,8 +46,7 @@ function parseCSV(text: string): Record<string,string>[] {
 
 function downloadTemplate(tab: Tab) {
   const t = TEMPLATES[tab];
-  const rows = [t.headers.join(","), ...t.example.map(r => r.join(","))].join("
-");
+  const rows = [t.headers.join(","), ...t.example.map(r => r.join(","))].join("\n");
   const blob = new Blob([rows], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a"); a.href = url;
