@@ -27,10 +27,7 @@ export async function GET(req: NextRequest) {
         name:"1. Authentication",
         item:[{
           name:"Get Access Token",
-          event:[{ listen:"test", script:{ exec:[
-            "const r = pm.response.json();",
-            "if (r.access_token) { pm.collectionVariables.set('accessToken', r.access_token); pm.test('Token received', () => pm.expect(r.access_token).to.exist); }",
-          ], type:"text/javascript" }}],
+          event:[{ listen:"test", script:{ exec:["const r = pm.response.json(); if (r.access_token) { pm.collectionVariables.set('accessToken', r.access_token); }"], type:"text/javascript" }}],
           request:{
             method:"POST", url:`${baseUrl}/api/oauth2/token`,
             header:[{ key:"Content-Type", value:"application/x-www-form-urlencoded" }],
