@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
         role: body.role || 'REQUESTOR',
         jobTitle: body.jobTitle || null,
         department: body.department || null,
-        currency: 'INR', inviteStatus: 'PENDING',
+        currency: body.currency || 'INR', inviteStatus: 'PENDING',
       },
     });
     return NextResponse.json({ user }, { status: 201 });

@@ -6,11 +6,14 @@ type Step = "WELCOME"|"NAME"|"CATEGORY"|"EMAIL"|"PHONE"|"CONTACT"|"CITY"|"PAYMEN
 type FormData = { name?:string; category?:string; contactEmail?:string; contactPhone?:string; contactName?:string; city?:string; country?:string; paymentTerms?:string; businessJustification?:string; };
 type Msg = { role:"bot"|"user"|"status"; text:string; options?:{label:string;value:string}[]; };
 
-// CATEGORIES loaded from /api/admin/lookups?type=CATEGORY
-const CATEGORIES: string[] = [];
-// PAYMENT_TERMS loaded from /api/admin/lookups?type=PAYMENT_TERMS
-const PAYMENT_TERMS: string[] = [];
-const CITIES: string[] = [];
+async function fetchLookup(type: string): Promise<string[]> {
+  try {
+    const r = await fetch(`/api/admin/lookups?type=${type}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return Array.isArray(d.lookups) ? d.lookups.map((l: { label: string }) => l.label) : [];
+  } catch { return []; }
+}
 
 export default function SupplierOnboardingBot({ onClose }: { onClose?: () => void }) {
   const [step, setStep] = useState<Step>("WELCOME");
@@ -19,6 +22,9 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({});
   const [createdCode, setCreatedCode] = useState<string|null>(null);
+  const [orgName, setOrgName] = useState("your organization");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [paymentTerms, setPaymentTerms] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, loading]);
@@ -27,8 +33,18 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
     setMsgs(m => [...m, { role, text, options }]);
 
   useEffect(() => {
-    addMsg("bot", "👋 Welcome to **Supplier Onboarding**!\n\nI'll help register your company as an approved vendor for Ace Technologies. This takes about 2 minutes.\n\nLet's start — what is your company's full legal name?");
-    setStep("NAME");
+    Promise.all([
+      fetch("/api/user/profile").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetchLookup("CATEGORY"),
+      fetchLookup("PAYMENT_TERMS"),
+    ]).then(([profileData, cats, terms]) => {
+      const name = profileData?.organizationName || "your organization";
+      setOrgName(name);
+      setCategories(cats);
+      setPaymentTerms(terms);
+      addMsg("bot", `👋 Welcome to **Supplier Onboarding**!\n\nI'll help register your company as an approved vendor for ${name}. This takes about 2 minutes.\n\nLet's start — what is your company's full legal name?`);
+      setStep("NAME");
+    });
   }, []);
 
   function restart() {
@@ -56,7 +72,7 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
       case "NAME": {
         if (value.length < 3) { addMsg("bot", "Please enter the full legal company name (at least 3 characters):"); return; }
         setFormData(d => ({ ...d, name: value }));
-        addMsg("bot", `Great! **${value}**\n\nWhat category of products or services does your company provide?`, CATEGORIES.map(c => ({ label: c, value: c })));
+        addMsg("bot", `Great! **${value}**\n\nWhat category of products or services does your company provide?`, categories.map(c => ({ label: c, value: c })));
         setStep("CATEGORY"); break;
       }
       case "CATEGORY": {
@@ -77,21 +93,17 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
       }
       case "CONTACT": {
         setFormData(d => ({ ...d, contactName: value }));
-        addMsg("bot", "Which city is your company headquartered in?", [
-          ...CITIES.map(c => ({ label: c, value: c })),
-          { label: "Other — I'll type", value: "custom" },
-        ]);
+        addMsg("bot", "Which city is your company headquartered in?");
         setStep("CITY"); break;
       }
       case "CITY": {
-        if (value === "custom") { addMsg("bot", "Type your city name:"); return; }
-        setFormData(d => ({ ...d, city: value, country: "India" }));
-        addMsg("bot", "What are your preferred payment terms?", PAYMENT_TERMS.map(p => ({ label: p, value: p })));
+        setFormData(d => ({ ...d, city: value }));
+        addMsg("bot", "What are your preferred payment terms?", paymentTerms.map(p => ({ label: p, value: p })));
         setStep("PAYMENT"); break;
       }
       case "PAYMENT": {
         setFormData(d => ({ ...d, paymentTerms: value }));
-        addMsg("bot", "Why do you want to become a vendor for Ace Technologies? (A brief description of your value proposition)", [
+        addMsg("bot", `Why do you want to become a vendor for ${orgName}? (A brief description of your value proposition)`, [
           { label: "Competitive pricing & quality products", value: "Competitive pricing, quality products, and reliable delivery." },
           { label: "Specialized expertise in our category", value: "Specialized expertise and proven track record in the domain." },
           { label: "Strong after-sales support", value: "Comprehensive after-sales support, warranties, and SLAs." },
@@ -105,7 +117,7 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
         setFormData(fd);
         addMsg("bot",
           `📋 **Onboarding Summary**\n\n` +
-          `Company: ${fd.name}\nCategory: ${fd.category}\nCity: ${fd.city}, India\n` +
+          `Company: ${fd.name}\nCategory: ${fd.category}\nCity: ${fd.city}\n` +
           `Contact: ${fd.contactName}\nEmail: ${fd.contactEmail}\nPhone: ${fd.contactPhone}\n` +
           `Payment Terms: ${fd.paymentTerms}\n\nValue Proposition: ${fd.businessJustification}\n\nSubmit this registration?`,
           [{ label: "✅ Submit Registration", value: "submit" }, { label: "↩ Start Over", value: "restart" }]
@@ -135,7 +147,7 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
       setCreatedCode(code);
       addMsg("bot",
         `🎉 **Registration submitted successfully!**\n\nYour vendor code: **${code}**\n\n` +
-        `Your application is now pending review by the Ace Technologies procurement team.\n\n` +
+        `Your application is now pending review by the ${orgName} procurement team.\n\n` +
         `You will receive a confirmation email at **${formData.contactEmail}** once reviewed (typically within 2-3 business days).`,
         [{ label: "📧 Register Another", value: "new" }]
       );
@@ -149,7 +161,7 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
     setLoading(false);
   }
 
-  const BUTTON_STEPS: Step[] = ["CATEGORY","PAYMENT","CITY","JUSTIFICATION","CONFIRM","DONE"];
+  const BUTTON_STEPS: Step[] = ["CATEGORY","PAYMENT","JUSTIFICATION","CONFIRM","DONE"];
   const showInput = !BUTTON_STEPS.includes(step);
   const PROG = [
     { l: "Company", s: ["NAME","CATEGORY"] as Step[] },
@@ -230,7 +242,7 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-2.5 focus-within:border-[#1A2A52] focus-within:bg-white transition-colors">
             <input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !loading) { e.preventDefault(); handleSend(); } }}
-              placeholder={step === "NAME" ? "Enter full company legal name..." : step === "EMAIL" ? "e.g. procurement@company.com..." : step === "PHONE" ? "e.g. +91 98765 43210..." : step === "CONTACT" ? "e.g. Rajesh Kumar..." : "Type your answer..."}
+              placeholder={step === "NAME" ? "Enter full company legal name..." : step === "EMAIL" ? "e.g. procurement@company.com..." : step === "PHONE" ? "e.g. +91 98765 43210..." : step === "CONTACT" ? "e.g. Rajesh Kumar..." : step === "CITY" ? "e.g. Bengaluru..." : "Type your answer..."}
               disabled={loading}
               className="flex-1 text-xs bg-transparent outline-none text-gray-800 placeholder:text-gray-400 disabled:opacity-40"/>
             <button onClick={handleSend} disabled={!input.trim() || loading}

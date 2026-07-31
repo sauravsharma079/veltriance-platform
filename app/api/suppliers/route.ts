@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
       data: { organizationId: org.id, name: body.name, code, status: "PENDING_APPROVAL",
         onboardingStage: "REGISTRATION", contactEmail: body.contactEmail ?? null,
         contactName: body.contactName ?? null, category: body.category ?? null,
-        country: body.country ?? "India", currency: "INR", requestedById: profile.id },
+        city: body.city ?? null, contactPhone: body.contactPhone ?? null,
+        country: body.country ?? "India", currency: body.currency ?? "INR", requestedById: profile.id },
     });
     return NextResponse.json({ supplier }, { status: 201 });
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }

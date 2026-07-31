@@ -32,7 +32,7 @@ type Data = {
   supplierId?: string; supplierName?: string; docSupplierId?: string; docSupplierName?: string;
 };
 
-const CATS = [
+const FALLBACK_CATS = [
   "IT Hardware","Software & Licenses","Cloud Services","Consulting Services",
   "Office Supplies","Facilities","Logistics","Marketing","Professional Services","Other",
 ];
@@ -89,6 +89,7 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
   const [input, setInput]       = useState("");
   const [busy, setBusy]         = useState(false);
   const [messages, setMessages] = useState<Msg[]>([MENU_MSG]);
+  const [cats, setCats]         = useState<string[]>(FALLBACK_CATS);
   const bottomRef               = useRef<HTMLDivElement>(null);
   const inputRef                = useRef<HTMLInputElement>(null);
 
@@ -98,6 +99,17 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [messages, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/admin/lookups?type=CATEGORY")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const labels = Array.isArray(d?.lookups) ? d.lookups.map((l: { label: string }) => l.label) : [];
+        if (labels.length) setCats(labels);
+      })
+      .catch(() => {});
+  }, [open]);
 
   const push = useCallback((...msgs: Msg[]) => setMessages(p => [...p, ...msgs]), []);
 
@@ -159,14 +171,14 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
           if (text.length < 2) { push({ role: "agent", text: "Please enter a valid company name (at least 2 characters)." }); break; }
           setData(d => ({ ...d, name: text }));
           setStep("ADD_CATEGORY");
-          push({ role: "agent", text: `**${text}** ✓\n\nWhat **category** best describes this supplier?`, options: CATS.map((c, i) => `${i + 1}. ${c}`) });
+          push({ role: "agent", text: `**${text}** ✓\n\nWhat **category** best describes this supplier?`, options: cats.map((c, i) => `${i + 1}. ${c}`) });
           break;
         }
 
         case "ADD_CATEGORY": {
           const num = parseInt(text);
-          const cat = isNaN(num) ? CATS.find(c => c.toLowerCase().includes(text.toLowerCase())) : CATS[num - 1];
-          if (!cat) { push({ role: "agent", text: "Pick 1–10 or type the category name.", options: CATS.map((c, i) => `${i + 1}. ${c}`) }); break; }
+          const cat = isNaN(num) ? cats.find(c => c.toLowerCase().includes(text.toLowerCase())) : cats[num - 1];
+          if (!cat) { push({ role: "agent", text: "Pick 1–10 or type the category name.", options: cats.map((c, i) => `${i + 1}. ${c}`) }); break; }
           setData(d => ({ ...d, category: cat }));
           setStep("ADD_CONTACT");
           push({ role: "agent", text: `**${cat}** ✓\n\nWhat is the **contact person's name**? (type 'skip' to skip)` });
@@ -502,7 +514,7 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
     const { ok, data: d } = await api<{ supplier: { id: string; code: string }; error?: string }>("/api/suppliers", "POST", {
       name: data.name, contactName: data.contactName, contactEmail: data.contactEmail,
       contactPhone: data.contactPhone, category: data.category, city: data.city,
-      businessJustification: data.businessJustification, country: "India", currency: "INR",
+      businessJustification: data.businessJustification,
     });
     setMessages(p => p.filter(m => m.role !== "loading"));
 

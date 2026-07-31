@@ -28,7 +28,7 @@ export async function GET() {
   if (!profile || !organization || profile.organizationId !== organization.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.json({ profile });
+  return NextResponse.json({ profile, organizationName: organization.name });
 }
 
 export async function PATCH(req: NextRequest) {

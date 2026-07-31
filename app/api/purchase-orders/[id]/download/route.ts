@@ -52,7 +52,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111827;backgro
   <div>
     <div style="font-size:24px;font-weight:900;color:#1A2A52">Veltriance</div>
     <div style="font-size:8px;color:#C8A04D;letter-spacing:2.5px;text-transform:uppercase;margin-top:2px">Technologies LLP</div>
-    <div style="font-size:9px;color:#6b7280;margin-top:10px;line-height:1.7">Procurement Platform<br>${O?.name||"Ace Technologies India Pvt. Ltd."}<br>CIN: U72900KA2024PTC000001</div>
+    <div style="font-size:9px;color:#6b7280;margin-top:10px;line-height:1.7">Procurement Platform<br>${O?.name||"—"}</div>
   </div>
   <div style="text-align:right">
     <div style="font-size:28px;font-weight:900;color:#1A2A52">PURCHASE ORDER</div>
@@ -64,8 +64,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111827;backgro
 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
   <div style="background:#f8f9fb;border-radius:6px;padding:12px;border-left:3px solid #1A2A52">
     <div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">Bill To</div>
-    <div style="font-size:11px;font-weight:600;color:#111;line-height:1.5">${O?.name||"Ace Technologies India"}</div>
-    <div style="font-size:9px;color:#6b7280;margin-top:2px;line-height:1.6">GSTIN: 29AABCA1234A1Z5<br>PAN: AABCA1234A</div>
+    <div style="font-size:11px;font-weight:600;color:#111;line-height:1.5">${O?.name||"—"}</div>
   </div>
   <div style="background:#f8f9fb;border-radius:6px;padding:12px;border-left:3px solid #1A2A52">
     <div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">Supplier</div>
@@ -96,15 +95,15 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111827;backgro
 </table>
 <div style="display:flex;justify-content:flex-end;margin-bottom:20px">
   <div style="width:260px">
-    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e5e7eb;font-size:10px;color:#374151"><span>Subtotal (excl. GST)</span><span style="font-family:monospace">${fmt((po as any).subtotal??0)}</span></div>
-    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e5e7eb;font-size:10px;color:#374151"><span>IGST @ 18%</span><span style="font-family:monospace">${fmt((po as any).totalTax??(po as any).taxAmount??0)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e5e7eb;font-size:10px;color:#374151"><span>Subtotal (excl. tax)</span><span style="font-family:monospace">${fmt((po as any).subtotal??0)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e5e7eb;font-size:10px;color:#374151"><span>Tax</span><span style="font-family:monospace">${fmt((po as any).totalTax??(po as any).taxAmount??0)}</span></div>
     <div style="display:flex;justify-content:space-between;padding:8px 0 6px;font-weight:700;font-size:13px;color:#1A2A52;border-top:2px solid #1A2A52;margin-top:4px"><span>TOTAL AMOUNT</span><span style="font-family:monospace">${fmt((po as any).totalAmount??0)}</span></div>
   </div>
 </div>
 <div style="background:#f0f4ff;border-radius:6px;padding:14px;margin-bottom:24px;border:1px solid #dbeafe">
   <div style="font-size:8px;font-weight:700;color:#1A2A52;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Terms &amp; Conditions</div>
   <p style="font-size:9px;color:#374151;line-height:1.8">
-    1. This Purchase Order is issued subject to the standard procurement terms of ${O?.name||"Ace Technologies India"}.<br>
+    1. This Purchase Order is issued subject to the standard procurement terms of ${O?.name||"the issuing organization"}.<br>
     2. All goods/services must conform to specifications. Any deviation requires prior written approval.<br>
     3. Invoice must quote PO number <strong>${num}</strong>. Invoices without reference will not be processed.<br>
     4. Payment will be made as per agreed terms upon receipt of goods/services and valid tax invoice.
