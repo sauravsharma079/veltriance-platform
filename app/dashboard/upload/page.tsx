@@ -32,7 +32,8 @@ const TEMPLATES: Record<Tab, { headers: string[]; example: string[][] }> = {
 };
 
 function parseCSV(text: string): Record<string,string>[] {
-  const lines = text.trim().split("\n").map(l => l.trim()).filter(Boolean);
+  const newline = String.fromCharCode(10);
+  const lines = text.trim().split(newline).map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
   const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g,""));
   return lines.slice(1).map(line => {
