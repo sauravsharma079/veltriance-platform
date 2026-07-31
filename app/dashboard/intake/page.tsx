@@ -1,14 +1,19 @@
 
 "use client";
 
+import { useState } from "react";
 import {
   CheckCircle2, FileText, Package, ShoppingCart,
-  Shield, Zap, ArrowRight, Plus,
+  Shield, Zap, ArrowRight, Plus, Sparkles,
 } from "lucide-react";
 import Link from "next/link";
+import { IntakeAgent } from "@/components/IntakeAgent";
 
 export default function IntakePage() {
+  const [ariaOpen, setAriaOpen] = useState(false);
   return (
+    <>
+    <IntakeAgent open={ariaOpen} onClose={() => setAriaOpen(false)} />
     <div className="min-h-screen bg-[#F7F8FA] flex flex-col">
 
       {/* Top bar */}
@@ -34,15 +39,19 @@ export default function IntakePage() {
         {/* LEFT: Start CTA */}
         <div className="flex-1 p-6 flex flex-col items-center justify-center min-w-0" style={{ maxWidth: 640 }}>
           <div className="size-16 rounded-2xl bg-[#1A2A52]/8 flex items-center justify-center mb-5">
-            <FileText className="size-7 text-[#1A2A52]" />
+            <Sparkles className="size-7 text-[#1A2A52]" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900 mb-1.5">Start a new request</h2>
           <p className="text-sm text-gray-500 text-center max-w-sm mb-6">
-            Fill in what you need — the form adapts to your category and captures everything approvers need to review it.
+            Tell Aria what you need in plain English — it checks the catalog and supplier directory, fills in the rest, and submits it for approval.
           </p>
-          <Link href="/dashboard/intake/form"
+          <button onClick={() => setAriaOpen(true)}
             className="flex items-center gap-2 bg-[#1A2A52] text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-[#243766] transition-colors">
-            <Plus className="size-4" /> New request
+            <Sparkles className="size-4" /> Ask Aria
+          </button>
+          <Link href="/dashboard/intake/form"
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mt-4 transition-colors">
+            <Plus className="size-3.5" /> Or fill out the form manually
           </Link>
         </div>
 
@@ -105,13 +114,12 @@ export default function IntakePage() {
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Aria can</p>
             <div className="space-y-2">
               {[
-                "Search your supplier directory",
-                "Build line items from plain English",
-                "Calculate GST automatically",
+                "Understand plain-English requests",
+                "Check your catalog for a match",
+                "Check your supplier directory for a match",
+                "Fill in what's missing by asking you",
+                "Preview the approval path",
                 "Submit for approval instantly",
-                "Approve requisitions",
-                "Generate Purchase Orders",
-                "Check status anytime",
               ].map(f => (
                 <div key={f} className="flex items-center gap-2 text-xs text-gray-700">
                   <Zap className="size-3 text-[#C8A04D] shrink-0" />
@@ -143,5 +151,6 @@ export default function IntakePage() {
         </div>
       </div>
     </div>
+    </>
   );
 }
