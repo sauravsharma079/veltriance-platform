@@ -2,13 +2,13 @@
 import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Search, Plus, Star, AlertTriangle, CheckCircle, BarChart3, Building2, RefreshCw, X } from "lucide-react";
+import { Search, Plus, Star, AlertTriangle, CheckCircle, BarChart3, Building2, RefreshCw, X, Upload, Code2 } from "lucide-react";
 import SupplierOnboardingBot from "@/components/SupplierOnboardingBot";
 type Supplier = { id:string; name:string; code:string|null; category:string|null; tier:string|null; status:string; preferred:boolean; rating:number|null; riskScore:number|null; riskLevel:string|null; city:string|null; country:string|null; contactEmail:string|null; contactName:string|null; };
 const ST:Record<string,string>={ACTIVE:"bg-emerald-50 text-emerald-700 border border-emerald-200",PENDING_APPROVAL:"bg-amber-50 text-amber-700 border border-amber-200",BLOCKED:"bg-red-50 text-red-700 border border-red-200",INACTIVE:"bg-gray-100 text-gray-500 border border-gray-200"};
 function Bar({v}:{v:number|null}){if(v==null)return<span className="text-gray-300 text-xs">—</span>;const c=v>=90?"bg-emerald-500":v>=70?"bg-amber-500":"bg-red-500";return<div className="flex items-center gap-2"><div className="w-14 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className={"h-full "+c} style={{width:`${v}%`}}/></div><span className="text-xs text-gray-600">{Math.round(v)}</span></div>;}
 export default function SuppliersPage(){
-  const[list,setList]=useState<Supplier[]>([]);const[loading,setLoading]=useState(true);const[err,setErr]=useState("");const[q,setQ]=useState("");const[st,setSt]=useState("ACTIVE");const[showBot,setShowBot]=useState(false);
+  const[list,setList]=useState<Supplier[]>([]);const[loading,setLoading]=useState(true);const[err,setErr]=useState("");const[q,setQ]=useState("");const[st,setSt]=useState("ACTIVE");const[showBot,setShowBot]=useState(false);const[showUpload,setShowUpload]=useState(false);
   const load=useCallback(async()=>{
     setLoading(true);setErr("");
     try{const p=new URLSearchParams();if(q)p.set("q",q);if(st)p.set("status",st);const r=await fetch("/api/suppliers?"+p.toString());const txt=await r.text();if(!txt.trim()){setList([]);return;}const d=JSON.parse(txt);setList(Array.isArray(d?.suppliers)?d.suppliers:[]);}
@@ -20,9 +20,31 @@ export default function SuppliersPage(){
   return(
     <div className="min-h-screen bg-[#F7F8FA]">
       {showBot&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="w-[540px] h-[640px] rounded-2xl overflow-hidden shadow-2xl"><SupplierOnboardingBot onClose={()=>{setShowBot(false);load();}}/></div></div>}
+      {showUpload && (
+        <CsvUploadModal
+          config={{
+            title: "Bulk Upload Suppliers",
+            description: "Import vendors from CSV. Duplicate codes are skipped safely.",
+            endpoint: "/api/upload/suppliers",
+            templateName: "veltriance_suppliers_template",
+            headers: ["name","code","category","contactEmail","contactName","contactPhone","city","country","tier","paymentTerms"],
+            requiredHeaders: ["name"],
+            exampleRows: [
+              ["Tata Consultancy Services","SUP-201","IT Services","vendor@tcs.com","Amit Verma","+91-22-6778-9999","Mumbai","India","Tier 1","Net 30"],
+              ["Infosys Limited","SUP-202","Consulting","vendor@infosys.com","Priya Sharma","+91-80-2852-0261","Bengaluru","India","Tier 1","Net 45"],
+            ],
+          }}
+          onClose={() => setShowUpload(false)}
+          onSuccess={() => { setShowUpload(false); load(); }}
+        />
+      )}
       <div className="bg-white border-b border-gray-100 px-8 py-5 flex items-center justify-between">
         <div><h1 className="text-lg font-bold text-gray-900">Suppliers</h1><p className="text-xs text-gray-400">Approved vendor network</p></div>
-        <button onClick={()=>setShowBot(true)} className="flex items-center gap-2 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Onboard Supplier</button>
+        <div className="flex items-center gap-2">
+          <a href="/api/developer/postman?module=suppliers" download className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 border border-gray-200 px-4 py-2 rounded-xl hover:bg-gray-50"><Code2 className="size-3.5"/>Postman Collection</a>
+          <button onClick={()=>setShowUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button>
+          <button onClick={()=>setShowBot(true)} className="flex items-center gap-2 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Onboard Supplier</button>
+        </div>
       </div>
       <div className="px-8 py-6">
         <div className="grid grid-cols-4 gap-4 mb-6">

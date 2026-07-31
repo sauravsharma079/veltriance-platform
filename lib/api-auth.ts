@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "crypto";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentOrganization } from "@/lib/tenant";
 
 export type ApiContext = { clientId: string; organizationId: string; scopes: string[] };
 
@@ -22,6 +24,34 @@ export async function validateApiRequest(
   if (!tok.scopes.includes(requiredScope))
     return { error: `Insufficient scope. Required: ${requiredScope}`, status: 403 };
   return { ctx: { clientId: tok.apiClient.clientId, organizationId: tok.apiClient.organizationId, scopes: tok.scopes } };
+}
+
+export type UploadActor = { organizationId: string; userId: string | null; userName: string; source: "api" | "session" };
+
+/**
+ * Bulk-upload endpoints (CSV / integrator uploads) need to work two ways:
+ * from the dashboard UI (Supabase session cookie) and from an external
+ * caller with an OAuth 2.0 bearer token (Postman, an integration, etc).
+ * Bearer takes priority when present so API callers never fall through
+ * to a session check that will always reject them.
+ */
+export async function resolveUploadActor(
+  req: NextRequest, requiredScope: string
+): Promise<{ actor: UploadActor } | { error: string; status: number }> {
+  if ((req.headers.get("authorization") ?? "").startsWith("Bearer ")) {
+    const result = await validateApiRequest(req, requiredScope);
+    if ("error" in result) return result;
+    return { actor: { organizationId: result.ctx.organizationId, userId: null, userName: `API client (${result.ctx.clientId})`, source: "api" } };
+  }
+
+  const sb = await createClient();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return { error: "Unauthorized", status: 401 };
+  const org = await getCurrentOrganization();
+  if (!org) return { error: "Not found", status: 404 };
+  const profile = await prisma.user.findUnique({ where: { authId: user.id } });
+  if (!profile) return { error: "Profile not found", status: 404 };
+  return { actor: { organizationId: org.id, userId: profile.id, userName: profile.name, source: "session" } };
 }
 
 export const apiOk  = (data: unknown, meta?: Record<string, unknown>) => Response.json({ ...meta, data });

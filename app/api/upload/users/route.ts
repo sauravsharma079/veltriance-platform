@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { resolveUploadActor } from "@/lib/api-auth";
 
 export async function POST(req: NextRequest) {
   try {
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const auth = await resolveUploadActor(req, "users:write");
+    if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const { organizationId } = auth.actor;
 
     const { rows } = await req.json() as { rows: Record<string,string>[] };
     if (!Array.isArray(rows) || rows.length === 0)
@@ -25,7 +22,7 @@ export async function POST(req: NextRequest) {
         if (!name || !email) { results.errors.push("Row skipped: name and email required"); continue; }
         if (!email.includes("@")) { results.errors.push(`"${email}" is not a valid email`); continue; }
 
-        const existing = await prisma.user.findFirst({ where: { organizationId: org.id, email } });
+        const existing = await prisma.user.findFirst({ where: { organizationId, email } });
         if (existing) { results.skipped++; continue; }
 
         const rawRole = (row.role || row.Role || "REQUESTOR").trim().toUpperCase();
@@ -33,7 +30,7 @@ export async function POST(req: NextRequest) {
 
         await prisma.user.create({
           data: {
-            organizationId: org.id, name, email, role: role as any,
+            organizationId, name, email, role: role as any,
             inviteStatus: "PENDING",
             department: (row.department || row.Department || "").trim() || null,
             jobTitle:   (row.jobTitle   || row.job_title  || row.title || "").trim() || null,

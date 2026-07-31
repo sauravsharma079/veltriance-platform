@@ -1,24 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { resolveUploadActor } from "@/lib/api-auth";
 
 export async function POST(req: NextRequest) {
   try {
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const profile = await prisma.user.findUnique({ where: { authId: user.id } });
-    if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+    const auth = await resolveUploadActor(req, "requisitions:write");
+    if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const { organizationId } = auth.actor;
 
     const { rows } = await req.json() as { rows: Record<string,string>[] };
     if (!Array.isArray(rows) || rows.length === 0)
       return NextResponse.json({ error: "No rows provided" }, { status: 400 });
 
     const results: { created:number; skipped:number; errors:string[] } = { created:0, skipped:0, errors:[] };
-    const count = await prisma.requisition.count({ where: { organizationId: org.id } });
+    const count = await prisma.requisition.count({ where: { organizationId } });
     let idx = count;
 
     for (const row of rows) {
@@ -39,9 +34,21 @@ export async function POST(req: NextRequest) {
         let supplierId: string|undefined;
         if (supplierName) {
           const sup = await prisma.supplier.findFirst({
-            where: { organizationId: org.id, name: { contains: supplierName, mode: "insensitive" } }
+            where: { organizationId, name: { contains: supplierName, mode: "insensitive" } }
           });
           supplierId = sup?.id;
+        }
+
+        // API-sourced uploads have no session user — resolve a requestor from
+        // the row (or fall back to the org's first admin) since it's required.
+        let requestorId = auth.actor.userId;
+        if (!requestorId) {
+          const requestorEmail = (row.requestorEmail || row.requestor_email || "").trim().toLowerCase();
+          const requestor = requestorEmail
+            ? await prisma.user.findFirst({ where: { organizationId, email: requestorEmail } })
+            : await prisma.user.findFirst({ where: { organizationId, role: "ADMIN" }, orderBy: { createdAt: "asc" } });
+          if (!requestor) { results.errors.push(`"${title}": no requestor found — set requestorEmail or invite an admin`); continue; }
+          requestorId = requestor.id;
         }
 
         idx++;
@@ -50,7 +57,7 @@ export async function POST(req: NextRequest) {
 
         const req2 = await prisma.requisition.create({
           data: {
-            organizationId: org.id, requestorId: profile.id,
+            organizationId, requestorId,
             requisitionNumber: num, title, category,
             priority: ["HIGH","MEDIUM","LOW","CRITICAL"].includes(priority) ? priority : "MEDIUM",
             status: "DRAFT", currency: "INR",

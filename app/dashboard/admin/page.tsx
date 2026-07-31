@@ -1,7 +1,7 @@
 "use client";
 import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
 import { useState, useEffect, useCallback } from "react";
-import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw } from "lucide-react";
+import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload } from "lucide-react";
 
 type User = { id:string; name:string; email:string; role:string; department:string|null; inviteStatus:string; jobTitle:string|null };
 type Supplier = { id:string; name:string; code:string; status:string; category:string|null; contactEmail:string|null; onboardingStage:string|null };
@@ -12,6 +12,8 @@ type Lookup = { id:string; type:string; code:string; label:string };
 type ContentGroup = { id:string; name:string; description:string|null; color:string|null };
 type WorkspaceRole = { id:string; name:string; description:string|null; isSystem:boolean; permissions:string[] };
 type ApiClient = { id:string; name:string; description:string|null; clientId:string; scopes:string[]; active:boolean };
+type CoaSegment = { id:string; position:number; name:string; description:string|null; linkedLookupType:string|null };
+type Coa = { id:string; name:string; code:string; companyCode:string|null; currency:string; taxType:string|null; taxRegNumber:string|null; billingCity:string|null; billingCountry:string|null; segments:CoaSegment[] };
 
 const TABS = [
   { id:"users", label:"Users & Invites", icon:Users },
@@ -95,15 +97,19 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [modal, setModal] = useState<string|null>(null);
       const [editItem, setEditItem] = useState<any>(null);
+  const [showLookupUpload, setShowLookupUpload] = useState(false);
+  const [showUserUpload, setShowUserUpload] = useState(false);
+  const [coas, setCoas] = useState<Coa[]>([]);
   const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"" });
   const [ruleForm, setRuleForm] = useState({ name:"", priority:"10", minAmount:"", maxAmount:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager" }] });
   const [lookupForm, setLookupForm] = useState({ type:"DEPARTMENT", code:"", label:"" });
   const [fieldForm, setFieldForm] = useState({ module:"REQUISITION", fieldName:"", label:"", fieldType:"TEXT", required:false, placeholder:"", options:"" });
   const [groupForm, setGroupForm] = useState({ name:"", description:"", color:"#1A2A52" });
+  const [coaForm, setCoaForm] = useState({ name:"", code:"", companyCode:"", currency:"INR", taxType:"", taxRegNumber:"", billingCity:"", billingCountry:"" });
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError("");
-    const [u,s,r,f,l,ro,cg,ac] = await Promise.all([
+    const [u,s,r,f,l,ro,cg,ac,co] = await Promise.all([
       safeFetch("/api/admin/users"),
       safeFetch("/api/suppliers?status=PENDING_APPROVAL"),
       safeFetch("/api/admin/approval-rules"),
@@ -112,6 +118,7 @@ export default function AdminPage() {
       safeFetch("/api/admin/roles"),
       safeFetch("/api/admin/content-groups"),
       safeFetch("/api/admin/api-clients"),
+      safeFetch("/api/admin/coa"),
     ]);
     setUsers(u?.users ?? []);
     setSuppliers(s?.suppliers ?? []);
@@ -121,6 +128,7 @@ export default function AdminPage() {
     setRoles(ro?.roles ?? []);
     setGroups(cg?.groups ?? []);
     setApiClients(ac?.clients ?? []);
+    setCoas(co?.coas ?? []);
     setLoading(false);
   }, []);
 
@@ -163,6 +171,11 @@ export default function AdminPage() {
     await apiCall("/api/admin/content-groups", "POST", groupForm);
     setGroupForm({ name:"", description:"", color:"#1A2A52" });
   }
+  async function createCoa() {
+    if (!coaForm.name || !coaForm.code) { setError("COA name and code required"); return; }
+    await apiCall("/api/admin/coa", "POST", { type:"coa", ...coaForm });
+    setCoaForm({ name:"", code:"", companyCode:"", currency:"INR", taxType:"", taxRegNumber:"", billingCity:"", billingCountry:"" });
+  }
 
   const pendingInvites = users.filter(u=>u.inviteStatus==="PENDING").length;
 
@@ -172,6 +185,7 @@ export default function AdminPage() {
         <div className="px-5 py-5 border-b border-gray-100">
           <p className="text-sm font-bold text-gray-900">Admin</p>
           <p className="text-[10px] text-gray-400 mt-0.5">Workspace configuration</p>
+          <a href="/api/developer/postman?module=admin" download className="flex items-center gap-1.5 text-[10px] font-semibold text-[#1A2A52] mt-3 hover:underline"><Code2 className="size-3"/>Postman Collection</a>
         </div>
         <nav className="flex-1 py-3">
           {TABS.map(t=>(
@@ -195,7 +209,10 @@ export default function AdminPage() {
                           <div>
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-base font-semibold text-gray-900">Users & Invites <span className="text-sm font-normal text-gray-400 ml-1">{users.length} total</span></h2>
-                <button onClick={()=>setModal("user")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Invite User</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={()=>setShowUserUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button>
+                  <button onClick={()=>setModal("user")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Invite User</button>
+                </div>
               </div>
               <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
                 <div className="grid grid-cols-12 gap-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
@@ -294,7 +311,7 @@ export default function AdminPage() {
 
           {tab==="lookups"&&(
             <div>
-              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Lookup Values <span className="text-sm font-normal text-gray-400 ml-1">{lookups.length} values</span></h2><button onClick={()=>setModal("lookup")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Value</button></div>
+              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Lookup Values <span className="text-sm font-normal text-gray-400 ml-1">{lookups.length} values</span></h2><div className="flex items-center gap-2"><button onClick={()=>setShowLookupUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button><button onClick={()=>setModal("lookup")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Value</button></div></div>
               {lookups.length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No lookups</div>:(
                 <div className="space-y-4">{[...new Set(lookups.map(l=>l.type))].map(type=>(<div key={type}><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{type.replace(/_/g," ")}</p><div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">{lookups.filter(l=>l.type===type).map(l=>(<div key={l.id} className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/40"><span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded w-20 text-center">{l.code}</span><span className="text-sm text-gray-800 flex-1">{l.label}</span><button onClick={()=>{ if(confirm("Delete this lookup?")) apiCall("/api/admin/lookups","DELETE",{id:l.id}); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3"/></button></div>))}</div></div>))}</div>
               )}
@@ -303,11 +320,19 @@ export default function AdminPage() {
 
           {tab==="coa"&&(
             <div>
-              <h2 className="text-base font-semibold text-gray-900 mb-5">Chart of Accounts</h2>
-              <div className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm">
-                <div className="flex items-center gap-4 mb-6"><div className="size-12 bg-[#1A2A52]/8 rounded-xl flex items-center justify-center"><BarChart2 className="size-6 text-[#1A2A52]"/></div><div><p className="text-base font-bold text-gray-900">ACE-IN01 — Ace Technologies India COA</p><p className="text-xs text-gray-400 mt-0.5">GST · Company Code: ACETEC-IN · Currency: INR</p></div></div>
-                <div className="grid grid-cols-4 gap-3">{[["1","Company","Entity identifier"],["2","Business Area","Linked to Department"],["3","Cost Centre","Linked to Cost Center"],["4","GL Account","Linked to GL Account"]].map(([pos,name,desc])=>(<div key={pos} className="bg-gray-50 rounded-xl p-4 border border-gray-100"><div className="size-6 bg-[#1A2A52] text-white rounded-full text-xs flex items-center justify-center font-bold mb-2">{pos}</div><p className="text-xs font-semibold text-gray-900">{name}</p><p className="text-[10px] text-gray-400 mt-0.5">{desc}</p></div>))}</div>
-              </div>
+              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Chart of Accounts <span className="text-sm font-normal text-gray-400 ml-1">{coas.length} configured</span></h2><button onClick={()=>setModal("coa")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add COA</button></div>
+              {coas.length===0?(
+                <div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No chart of accounts configured yet</div>
+              ):(
+                <div className="space-y-4">{coas.map(c=>(
+                  <div key={c.id} className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm">
+                    <div className="flex items-center gap-4 mb-6"><div className="size-12 bg-[#1A2A52]/8 rounded-xl flex items-center justify-center"><BarChart2 className="size-6 text-[#1A2A52]"/></div><div><p className="text-base font-bold text-gray-900">{c.code} — {c.name}</p><p className="text-xs text-gray-400 mt-0.5">{[c.taxType, c.companyCode?`Company Code: ${c.companyCode}`:null, `Currency: ${c.currency}`].filter(Boolean).join(" · ")}</p></div></div>
+                    {c.segments.length===0?<p className="text-xs text-gray-400">No segments configured</p>:(
+                      <div className="grid grid-cols-4 gap-3">{c.segments.map(seg=>(<div key={seg.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100"><div className="size-6 bg-[#1A2A52] text-white rounded-full text-xs flex items-center justify-center font-bold mb-2">{seg.position}</div><p className="text-xs font-semibold text-gray-900">{seg.name}</p><p className="text-[10px] text-gray-400 mt-0.5">{seg.linkedLookupType?`Linked to ${seg.linkedLookupType.replace(/_/g," ")}`:(seg.description||"—")}</p></div>))}</div>
+                    )}
+                  </div>
+                ))}</div>
+              )}
             </div>
           )}
 
@@ -334,6 +359,8 @@ export default function AdminPage() {
       {modal==="field"&&<Modal title="Add Custom Field" onClose={()=>{ setModal(null); setError(""); }}><Sel label="Module *" value={fieldForm.module} onChange={v=>setFieldForm(f=>({...f,module:v}))} options={MODULES}/><div className="grid grid-cols-2 gap-3"><Input label="Field Name *" value={fieldForm.fieldName} onChange={v=>setFieldForm(f=>({...f,fieldName:v.toLowerCase().replace(/\s+/g,"_")}))} placeholder="e.g. project_code"/><Input label="Display Label *" value={fieldForm.label} onChange={v=>setFieldForm(f=>({...f,label:v}))} placeholder="e.g. Project Code"/></div><Sel label="Field Type *" value={fieldForm.fieldType} onChange={v=>setFieldForm(f=>({...f,fieldType:v}))} options={FIELD_TYPES}/><Input label="Placeholder" value={fieldForm.placeholder} onChange={v=>setFieldForm(f=>({...f,placeholder:v}))} placeholder="Helper text"/>{fieldForm.fieldType==="SELECT"&&<Input label="Options (comma separated)" value={fieldForm.options} onChange={v=>setFieldForm(f=>({...f,options:v}))} placeholder="Option A, Option B, Option C"/>}<label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={fieldForm.required} onChange={e=>setFieldForm(f=>({...f,required:e.target.checked}))} className="size-4 accent-[#1A2A52]"/><span className="text-sm text-gray-700 font-medium">Required field</span></label><div className="flex gap-3 pt-2"><button onClick={createField} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Add Field"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
 
       {modal==="group"&&<Modal title="Add Content Group" onClose={()=>{ setModal(null); setError(""); }}><Input label="Group Name *" value={groupForm.name} onChange={v=>setGroupForm(f=>({...f,name:v}))} placeholder="e.g. IT and Engineering"/><Input label="Description" value={groupForm.description} onChange={v=>setGroupForm(f=>({...f,description:v}))} placeholder="What this group covers"/><div><label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Color</label><input type="color" value={groupForm.color} onChange={e=>setGroupForm(f=>({...f,color:e.target.value}))} className="h-9 w-20 border border-gray-200 rounded-lg cursor-pointer"/></div><div className="flex gap-3 pt-2"><button onClick={createGroup} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Group"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
+
+      {modal==="coa"&&<Modal title="Add Chart of Accounts" onClose={()=>{ setModal(null); setError(""); }}><Input label="Name *" value={coaForm.name} onChange={v=>setCoaForm(f=>({...f,name:v}))} placeholder="e.g. India Operations COA"/><Input label="Code *" value={coaForm.code} onChange={v=>setCoaForm(f=>({...f,code:v.toUpperCase()}))} placeholder="e.g. IN01"/><div className="grid grid-cols-2 gap-3"><Input label="Company Code" value={coaForm.companyCode} onChange={v=>setCoaForm(f=>({...f,companyCode:v}))} placeholder="e.g. ORG-IN"/><Input label="Currency" value={coaForm.currency} onChange={v=>setCoaForm(f=>({...f,currency:v.toUpperCase()}))} placeholder="INR"/></div><div className="grid grid-cols-2 gap-3"><Input label="Tax Type" value={coaForm.taxType} onChange={v=>setCoaForm(f=>({...f,taxType:v}))} placeholder="e.g. GST"/><Input label="Tax Reg. Number" value={coaForm.taxRegNumber} onChange={v=>setCoaForm(f=>({...f,taxRegNumber:v}))} placeholder="Optional"/></div><div className="grid grid-cols-2 gap-3"><Input label="Billing City" value={coaForm.billingCity} onChange={v=>setCoaForm(f=>({...f,billingCity:v}))} placeholder="Optional"/><Input label="Billing Country" value={coaForm.billingCountry} onChange={v=>setCoaForm(f=>({...f,billingCountry:v}))} placeholder="Optional"/></div><div className="flex gap-3 pt-2"><button onClick={createCoa} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create COA"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
 
       {showLookupUpload && (
         <CsvUploadModal

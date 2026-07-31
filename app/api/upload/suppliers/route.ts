@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { resolveUploadActor } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
   try {
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const profile = await prisma.user.findUnique({ where: { authId: user.id } });
-    if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+    const auth = await resolveUploadActor(req, "suppliers:write");
+    if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    const { organizationId, userId, userName } = auth.actor;
 
     const { rows } = await req.json() as { rows: Record<string,string>[] };
     if (!Array.isArray(rows) || rows.length === 0)
@@ -26,13 +21,13 @@ export async function POST(req: NextRequest) {
         if (!name) { results.errors.push(`Row skipped: missing name`); continue; }
         const code = (row.code || row.Code || row.CODE || "").trim();
         if (code) {
-          const existing = await prisma.supplier.findFirst({ where: { organizationId: org.id, code } });
+          const existing = await prisma.supplier.findFirst({ where: { organizationId, code } });
           if (existing) { results.skipped++; continue; }
         }
-        const count = await prisma.supplier.count({ where: { organizationId: org.id } });
+        const count = await prisma.supplier.count({ where: { organizationId } });
         const autoCode = code || `SUP-${String(count + 101).padStart(3, "0")}`;
         await prisma.supplier.create({ data: {
-          organizationId: org.id, name, code: autoCode,
+          organizationId, name, code: autoCode,
           status: "ACTIVE", onboardingStage: "ACTIVE",
           category:     (row.category || row.Category || "").trim() || null,
           contactEmail: (row.contactEmail || row.contact_email || row.email || "").trim() || null,
@@ -43,7 +38,7 @@ export async function POST(req: NextRequest) {
           tier:         (row.tier || row.Tier || "Tier 2").trim(),
           paymentTerms: (row.paymentTerms || row.payment_terms || "Net 30").trim(),
           currency:     "INR",
-          requestedById: profile.id,
+          requestedById: userId,
         }});
         results.created++;
       } catch (e: any) {
@@ -51,7 +46,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await logAudit({ organizationId: org.id, userId: profile.id, userName: profile.name,
+    await logAudit({ organizationId, userId: userId ?? undefined, userName,
       action: "UPLOADED", entity: "SUPPLIER",
       details: { created: results.created, skipped: results.skipped, total: rows.length } });
 

@@ -19,20 +19,22 @@ const SCOPE_GROUPS = [
   { label: "Purchase Requests", scopes: ["requisitions:read", "requisitions:write"] },
   { label: "Purchase Orders",   scopes: ["purchase_orders:read", "purchase_orders:write"] },
   { label: "Suppliers",         scopes: ["suppliers:read", "suppliers:write"] },
-  { label: "Lookup Values",     scopes: ["lookup_values:read"] },
-  { label: "Users",             scopes: ["users:read"] },
+  { label: "Lookup Values",     scopes: ["lookup_values:read", "lookup_values:write"] },
+  { label: "Users",             scopes: ["users:read", "users:write"] },
   { label: "Administration",    scopes: ["admin:read"] },
 ];
 
 const SCOPE_DESC: Record<string, string> = {
   "requisitions:read":     "List and read purchase requisitions",
-  "requisitions:write":    "Create and update requisitions",
+  "requisitions:write":    "Create and update requisitions, including bulk upload",
   "purchase_orders:read":  "List and read purchase orders",
   "purchase_orders:write": "Update purchase order status and fields",
   "suppliers:read":        "List and read supplier records",
-  "suppliers:write":       "Create and update suppliers",
+  "suppliers:write":       "Create and update suppliers, including bulk upload",
   "lookup_values:read":    "Read reference / lookup data",
+  "lookup_values:write":   "Create and update lookup values, including bulk upload",
   "users:read":            "Read user directory",
+  "users:write":           "Invite users, including bulk upload",
   "admin:read":            "Read admin configuration",
 };
 
@@ -100,6 +102,30 @@ const API_ENDPOINTS = [
     description: "Get reference data — cost centers, GL accounts, categories, etc.",
     params: ["type", "active", "offset", "limit"],
     response: `{ "data": [{ "type": "COST_CENTER", "code": "CC001", "label": "Engineering" }] }`,
+  },
+  {
+    method: "POST", path: "/api/upload/requisitions", auth: true, scope: "requisitions:write",
+    description: "Bulk-create requisitions from an array of rows (CSV import equivalent). All start as DRAFT.",
+    body: `{\n  "rows": [\n    { "title": "Laptops", "amount": "142000", "requestorEmail": "priya@acme.com" }\n  ]\n}`,
+    response: `{ "created": 1, "skipped": 0, "errors": [] }`,
+  },
+  {
+    method: "POST", path: "/api/upload/suppliers", auth: true, scope: "suppliers:write",
+    description: "Bulk-create suppliers from an array of rows. Duplicate codes are skipped.",
+    body: `{\n  "rows": [\n    { "name": "Acme Corp", "category": "IT Hardware", "contactEmail": "vendor@acme.com" }\n  ]\n}`,
+    response: `{ "created": 1, "skipped": 0, "errors": [] }`,
+  },
+  {
+    method: "POST", path: "/api/upload/lookups", auth: true, scope: "lookup_values:write",
+    description: "Bulk-create or update lookup values (departments, GL accounts, cost centers, categories).",
+    body: `{\n  "rows": [\n    { "type": "DEPARTMENT", "code": "LEGAL", "label": "Legal & Compliance" }\n  ]\n}`,
+    response: `{ "created": 1, "updated": 0, "errors": [] }`,
+  },
+  {
+    method: "POST", path: "/api/upload/users", auth: true, scope: "users:write",
+    description: "Bulk-invite users. New rows are created with PENDING invite status.",
+    body: `{\n  "rows": [\n    { "name": "Rajesh Kumar", "email": "rajesh@acme.com", "role": "REQUESTOR" }\n  ]\n}`,
+    response: `{ "created": 1, "skipped": 0, "errors": [] }`,
   },
 ];
 

@@ -2,7 +2,7 @@
 import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { FileText, Upload, Code2 } from "lucide-react";
 
 type Requisition = {
   id: string;
@@ -32,6 +32,7 @@ export default function RequisitionsPage() {
     const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [loading, setLoading] = useState(true);
+  const [showReqUpload, setShowReqUpload] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -48,19 +49,33 @@ export default function RequisitionsPage() {
           <h1 className="text-xl font-semibold text-gray-900">Requisitions</h1>
           <p className="text-sm text-gray-500 mt-1">Track requests from draft through to completion.</p>
         </div>
-        <div className="flex bg-gray-100 rounded-lg p-1 text-sm">
-          <button
-            onClick={() => setScope("mine")}
-            className={`px-3 py-1.5 rounded-md transition-colors ${scope === "mine" ? "bg-white shadow-sm font-medium text-gray-900" : "text-gray-500"}`}
+        <div className="flex items-center gap-3">
+          <a
+            href="/api/developer/postman?module=requisitions" download
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50"
           >
-            Mine
-          </button>
+            <Code2 className="size-3.5" />Postman Collection
+          </a>
           <button
-            onClick={() => setScope("all")}
-            className={`px-3 py-1.5 rounded-md transition-colors ${scope === "all" ? "bg-white shadow-sm font-medium text-gray-900" : "text-gray-500"}`}
+            onClick={() => setShowReqUpload(true)}
+            className="flex items-center gap-1.5 text-sm font-medium text-[#1A2A52] border border-[#1A2A52]/20 px-3 py-1.5 rounded-lg hover:bg-[#1A2A52]/5"
           >
-            All
+            <Upload className="size-3.5" />Upload CSV
           </button>
+          <div className="flex bg-gray-100 rounded-lg p-1 text-sm">
+            <button
+              onClick={() => setScope("mine")}
+              className={`px-3 py-1.5 rounded-md transition-colors ${scope === "mine" ? "bg-white shadow-sm font-medium text-gray-900" : "text-gray-500"}`}
+            >
+              Mine
+            </button>
+            <button
+              onClick={() => setScope("all")}
+              className={`px-3 py-1.5 rounded-md transition-colors ${scope === "all" ? "bg-white shadow-sm font-medium text-gray-900" : "text-gray-500"}`}
+            >
+              All
+            </button>
+          </div>
         </div>
       </div>
 
@@ -71,8 +86,7 @@ export default function RequisitionsPage() {
           <div className="px-5 py-10 text-center">
             <FileText className="size-8 text-gray-300 mx-auto mb-2" />
             <p className="text-sm text-gray-400">No requisitions yet.</p>
-
-            <button onClick={() => setShowReqUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5 mr-2"><svg className="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>Upload CSV</button>            <Link href="/dashboard/intake" className="text-sm text-[#1A2A52] font-medium hover:underline mt-1 inline-block">
+            <Link href="/dashboard/intake" className="text-sm text-[#1A2A52] font-medium hover:underline mt-1 inline-block">
               Submit your first request
             </Link>
           </div>
