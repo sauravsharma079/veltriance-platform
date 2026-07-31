@@ -22,6 +22,7 @@ const SCOPE_GROUPS = [
   { label: "Lookup Values",   scopes: ["lookup_values:read"] },
   { label: "Users",           scopes: ["users:read"] },
   { label: "Administration",  scopes: ["admin:read"] },
+  { label: "Catalogs",        scopes: ["catalogs:read", "catalogs:write"] },
 ];
 
 const SCOPE_DESC: Record<string, string> = {
@@ -34,6 +35,8 @@ const SCOPE_DESC: Record<string, string> = {
   "lookup_values:read":     "Read lookup / reference data",
   "users:read":             "Read user directory",
   "admin:read":             "Read admin configuration",
+  "catalogs:read":          "Read catalogs and catalog items",
+  "catalogs:write":         "Create catalogs and bulk-upload catalog items",
 };
 
 // ─── Credential reveal box ────────────────────────────────────────────────────

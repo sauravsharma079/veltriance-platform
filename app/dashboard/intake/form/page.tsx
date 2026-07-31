@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Plus, Trash2, AlertTriangle, CheckCircle, Search } from "lucide-react";
 import { GlCodingPanel } from "@/components/GlCodingPanel";
+import { DynamicFieldsPanel, CustomFieldDef, FieldAnswers } from "@/components/DynamicFieldsPanel";
 
 type Supplier = { id: string; name: string; contactEmail: string | null; preferred: boolean };
 type LookupValue = { code: string; label: string };
@@ -49,6 +50,10 @@ export default function IntakeFormPage() {
     costCenter: "", deliveryLocation: "", requiredDate: "",
     currency: "USD", businessJustification: "", policyException: false, policyExceptionNote: "",
   });
+
+  // Category-specific dynamic fields
+  const [customFieldAnswers, setCustomFieldAnswers] = useState<FieldAnswers>({});
+  const [dynamicFieldDefs, setDynamicFieldDefs] = useState<CustomFieldDef[]>([]);
 
   // Line items
   const [lines, setLines] = useState<LineItem[]>([{ ...EMPTY_LINE }]);
@@ -100,7 +105,13 @@ export default function IntakeFormPage() {
   const overBudget = budgetNum > 0 && grandTotal > budgetNum;
 
   function canProceed() {
-    if (step === 0) return header.title.trim() && header.category.trim();
+    if (step === 0) {
+      if (!header.title.trim() || !header.category.trim()) return false;
+      return dynamicFieldDefs.filter(f => f.required).every(f => {
+        const v = customFieldAnswers[f.fieldKey];
+        return v !== undefined && v !== "";
+      });
+    }
     if (step === 1) return lines.every(li => li.description.trim() && Number(li.quantity) > 0);
     return true;
   }
@@ -121,6 +132,7 @@ export default function IntakeFormPage() {
         ...header,
         budget: header.budget ? Number(header.budget) : undefined,
         intakeSource: "FORM",
+        customFieldAnswers: Object.keys(customFieldAnswers).length > 0 ? customFieldAnswers : undefined,
         lineItems: lines.map((li) => ({
           description: li.description,
           partNumber: li.partNumber || undefined,
@@ -191,12 +203,12 @@ export default function IntakeFormPage() {
               </div>
               <Field label="Category *">
                 {categories.length > 0 ? (
-                  <select value={header.category} onChange={e => setH("category", e.target.value)} className="input">
+                  <select value={header.category} onChange={e => { setH("category", e.target.value); setCustomFieldAnswers({}); }} className="input">
                     <option value="">— Select category —</option>
                     {categories.map(c => <option key={c.code} value={c.label}>{c.label}</option>)}
                   </select>
                 ) : (
-                  <input value={header.category} onChange={e => setH("category", e.target.value)}
+                  <input value={header.category} onChange={e => { setH("category", e.target.value); setCustomFieldAnswers({}); }}
                     className="input" placeholder="IT Hardware" />
                 )}
               </Field>
@@ -229,6 +241,18 @@ export default function IntakeFormPage() {
                 className="input resize-none" placeholder="Describe what you need and why…" />
             </Field>
           </Section>
+
+          {header.category && (
+            <Section title="Category-specific details">
+              <DynamicFieldsPanel
+                entity="REQUISITION"
+                category={header.category}
+                answers={customFieldAnswers}
+                onChange={setCustomFieldAnswers}
+                onFieldsLoaded={setDynamicFieldDefs}
+              />
+            </Section>
+          )}
 
           <Section title="Organisation">
             <div className="grid sm:grid-cols-2 gap-4">
@@ -489,6 +513,13 @@ export default function IntakeFormPage() {
             {header.policyException && (
               <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs mt-3">
                 <AlertTriangle className="size-3.5 shrink-0" /> Policy exception requested: {header.policyExceptionNote}
+              </div>
+            )}
+            {dynamicFieldDefs.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-100 grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                {dynamicFieldDefs.map(f => (
+                  <ReviewRow key={f.id} label={f.name} value={String(customFieldAnswers[f.fieldKey] ?? "—")} />
+                ))}
               </div>
             )}
           </div>

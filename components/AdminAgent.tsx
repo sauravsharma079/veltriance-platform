@@ -273,7 +273,7 @@ async function applyEdit(kind: EditKind, item: Item, field: string, value: strin
 
   if (kind === "field") {
     if (field === "label") {
-      const res = await fetch(`/api/admin/custom-fields/${item.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: value }) });
+      const res = await fetch(`/api/admin/custom-fields/${item.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: value }) });
       return res.ok ? { ok: true } : { ok: false, error: errStr(await res.json()) };
     }
     if (field === "required") {
@@ -377,7 +377,7 @@ async function createApproval(data: Record<string,string>, steps: string[]): Pro
 }
 
 async function createField(data: Record<string,string>): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch("/api/admin/custom-fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldKey: data.label.toLowerCase().replace(/\s+/g, "_"), label: data.label, fieldType: (data.fieldtype || "TEXT").toUpperCase(), entity: (data.entity || "REQUISITION").toUpperCase(), required: (data.required || "").toLowerCase() === "yes" }) });
+  const res = await fetch("/api/admin/custom-fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldKey: data.label.toLowerCase().replace(/\s+/g, "_"), name: data.label, fieldType: (data.fieldtype || "TEXT").toUpperCase(), entity: (data.entity || "REQUISITION").toUpperCase(), required: (data.required || "").toLowerCase() === "yes" }) });
   const d = await res.json();
   return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
 }
@@ -426,7 +426,7 @@ function createQuestion(state: CreateState): string {
     if (step === "more_steps") return `Add another step or type **done**.\n\nSo far: ${(state.steps ?? []).join(" → ")}`;
   }
   if (kind === "field") {
-    if (step === "entity")    return "Entity? **REQUISITION** · **SUPPLIER** · **USER**";
+    if (step === "entity")    return "Entity? **REQUISITION** · **SUPPLIER** · **PURCHASE_ORDER**";
     if (step === "label")     return "Field label?";
     if (step === "fieldtype") return "Type? **TEXT** · **NUMBER** · **DATE** · **DROPDOWN** · **CHECKBOX** · **TEXTAREA**";
     if (step === "required")  return "Required? (**yes** / **no**)";

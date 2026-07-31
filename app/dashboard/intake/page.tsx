@@ -1,10 +1,9 @@
 
 "use client";
 
-import IntakeBot from "@/components/IntakeBot";
 import {
-  CheckCircle2, Clock, FileText, Package, ShoppingCart,
-  Shield, Zap, ArrowRight,
+  CheckCircle2, FileText, Package, ShoppingCart,
+  Shield, Zap, ArrowRight, Plus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -15,8 +14,8 @@ export default function IntakePage() {
       {/* Top bar */}
       <div className="bg-white border-b border-gray-100 px-8 py-4 shrink-0 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">AI Purchase Request</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Describe what you need — Aria handles the rest</p>
+          <h1 className="text-lg font-semibold text-gray-900">New Purchase Request</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Submit a request and track it through approval to PO</p>
         </div>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/requisitions"
@@ -32,11 +31,19 @@ export default function IntakePage() {
 
       <div className="flex flex-1 overflow-hidden">
 
-        {/* LEFT: AI Bot — main hero */}
-        <div className="flex-1 p-6 flex flex-col min-w-0" style={{ maxWidth: 640 }}>
-          <div className="flex-1 min-h-0" style={{ height: "calc(100vh - 120px)" }}>
-            <IntakeBot />
+        {/* LEFT: Start CTA */}
+        <div className="flex-1 p-6 flex flex-col items-center justify-center min-w-0" style={{ maxWidth: 640 }}>
+          <div className="size-16 rounded-2xl bg-[#1A2A52]/8 flex items-center justify-center mb-5">
+            <FileText className="size-7 text-[#1A2A52]" />
           </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1.5">Start a new request</h2>
+          <p className="text-sm text-gray-500 text-center max-w-sm mb-6">
+            Fill in what you need — the form adapts to your category and captures everything approvers need to review it.
+          </p>
+          <Link href="/dashboard/intake/form"
+            className="flex items-center gap-2 bg-[#1A2A52] text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-[#243766] transition-colors">
+            <Plus className="size-4" /> New request
+          </Link>
         </div>
 
         {/* RIGHT: Info panel */}

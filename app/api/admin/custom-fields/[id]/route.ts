@@ -20,6 +20,7 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   required: z.boolean().optional(),
   options: z.array(z.string()).optional(),
+  categories: z.array(z.string()).optional(),
   helpText: z.string().optional(),
   sortOrder: z.number().int().optional(),
   active: z.boolean().optional(),

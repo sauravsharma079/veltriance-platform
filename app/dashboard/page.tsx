@@ -171,9 +171,17 @@ async function fetchDashboard(): Promise<DashboardData | null> {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasActivePunchouts, setHasActivePunchouts] = useState(false);
 
   useEffect(() => {
     fetchDashboard().then(d => { setData(d); setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/catalogs?type=PUNCHOUT&status=ACTIVE")
+      .then(r => r.json())
+      .then(d => setHasActivePunchouts(Array.isArray(d.catalogs) && d.catalogs.length > 0))
+      .catch(() => {});
   }, []);
 
   if (loading) return (
@@ -422,9 +430,11 @@ export default function DashboardPage() {
         )}
 
         {/* Quick actions */}
-        <div className="mt-4 grid grid-cols-4 gap-3">
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {[
             { label: "New Request",      desc: "Submit a purchase request",    icon: FileText,   href: "/dashboard/intake",           color: "bg-[#1A2A52]" },
+            { label: "Catalog",          desc: "Browse products & suppliers",  icon: Package,    href: "/dashboard/catalogs",          color: "bg-[#0891B2]" },
+            ...(hasActivePunchouts ? [{ label: "Punchouts", desc: "Launch a supplier catalog", icon: Zap, href: "/dashboard/catalogs", color: "bg-[#C8A04D]" }] : []),
             { label: "Add Supplier",     desc: "Onboard a new vendor",         icon: Building2,  href: "/dashboard/suppliers",         color: "bg-[#059669]" },
             { label: "View Approvals",   desc: "Review pending requests",      icon: CheckSquare,href: "/dashboard/approvals",         color: "bg-amber-500" },
             { label: "Connections",      desc: "Manage ERP & platform links",  icon: Zap,        href: "/dashboard/integrations",      color: "bg-[#7C3AED]" },

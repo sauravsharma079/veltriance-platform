@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { RequisitionStatus, ApprovalStepType, RequisitionPriority } from "@prisma/client";
+import { RequisitionStatus, ApprovalStepType, RequisitionPriority, Prisma } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { generateRequisitionNumber } from "@/lib/requisition-number";
-import { resolveApprovalSteps } from "@/lib/approval-matrix";
+import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { logAudit } from "@/lib/audit";
 import { getCurrentOrganization } from "@/lib/tenant";
 
@@ -22,7 +22,7 @@ const lineItemSchema = z.object({
   contractReference: z.string().optional(),
   notes: z.string().optional(),
   glCoaId: z.string().optional(),
-  glCoding: z.record(z.string()).optional(),
+  glCoding: z.record(z.string(), z.string()).optional(),
 });
 
 const submitSchema = z.object({
@@ -44,7 +44,8 @@ const submitSchema = z.object({
   policyExceptionNote: z.string().optional(),
   intakeSource: z.enum(["FORM", "CHATBOT"]).default("FORM"),
   chartOfAccountId: z.string().optional(),
-  glCoding: z.record(z.string()).optional(),
+  glCoding: z.record(z.string(), z.string()).optional(),
+  customFieldAnswers: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   lineItems: z.array(lineItemSchema).optional(),
   // Legacy single-item fields (from chatbot)
   quantity: z.coerce.number().positive().optional(),
@@ -53,14 +54,6 @@ const submitSchema = z.object({
 }).refine(d => (d.lineItems && d.lineItems.length > 0) || d.quantity !== undefined, {
   message: "Either lineItems or quantity must be provided",
 });
-
-const STATUS_FOR_STEP: Record<ApprovalStepType, RequisitionStatus> = {
-  [ApprovalStepType.MANAGER]: RequisitionStatus.MANAGER_APPROVAL,
-  [ApprovalStepType.DIRECTOR]: RequisitionStatus.DIRECTOR_APPROVAL,
-  [ApprovalStepType.PROCUREMENT]: RequisitionStatus.PROCUREMENT_REVIEW,
-  [ApprovalStepType.FINANCE]: RequisitionStatus.FINANCE_APPROVAL,
-  [ApprovalStepType.CUSTOM]: RequisitionStatus.PROCUREMENT_REVIEW,
-};
 
 export async function POST(req: NextRequest) {
   try {
@@ -173,7 +166,8 @@ export async function POST(req: NextRequest) {
         policyException: d.policyException,
         policyExceptionNote: d.policyExceptionNote,
         chartOfAccountId: d.chartOfAccountId,
-        glCoding: d.glCoding,
+        glCoding: d.glCoding as Prisma.InputJsonValue | undefined,
+        customFieldAnswers: d.customFieldAnswers as Prisma.InputJsonValue | undefined,
         submittedAt: new Date(),
         lineItems: {
           create: lineItemsWithTotals.map(li => ({

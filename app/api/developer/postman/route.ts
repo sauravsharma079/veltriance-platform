@@ -5,8 +5,9 @@ const MODULE_SCOPES: Record<string, string> = {
   requisitions: "requisitions:read requisitions:write",
   suppliers: "suppliers:read suppliers:write",
   admin: "lookup_values:read lookup_values:write users:read users:write admin:read",
+  catalogs: "catalogs:read catalogs:write",
 };
-const ALL_SCOPES = "requisitions:read requisitions:write purchase_orders:read purchase_orders:write suppliers:read suppliers:write lookup_values:read lookup_values:write users:read users:write admin:read";
+const ALL_SCOPES = "requisitions:read requisitions:write purchase_orders:read purchase_orders:write suppliers:read suppliers:write lookup_values:read lookup_values:write users:read users:write admin:read catalogs:read catalogs:write";
 
 function bearer(baseUrl: string, path: string, method = "GET", body?: any) {
   return {
@@ -93,16 +94,29 @@ export async function GET(req: NextRequest) {
     ],
   };
 
+  const catalogsItem = {
+    name: "6. Catalogs", module: "catalogs",
+    item: [
+      { name: "List Catalogs", request: bearer(baseUrl, "/api/catalogs") },
+      { name: "List Hosted Catalog Items", request: bearer(baseUrl, "/api/catalogs/{{catalogId}}/items") },
+      { name: "Bulk Upload Catalog Items", request: bearer(baseUrl, "/api/upload/catalog-items", "POST", {
+        catalogId: "{{catalogId}}",
+        rows: [{ sku: "ITEM-001", name: "Dell XPS 15 Laptop", unitPrice: "125000", currency: "INR", category: "IT Hardware", gl: "6100", unit: "Each", leadDays: "7", description: "Dell XPS 15 9530 16GB 512GB" }],
+      }) },
+    ],
+  };
+
   const allModules: Record<string, any> = {
     requisitions: requisitionsItem,
     "purchase-orders": purchaseOrdersItem,
     suppliers: suppliersItem,
     admin: adminItem,
+    catalogs: catalogsItem,
   };
 
   const item = module && allModules[module]
     ? [authItem, allModules[module]]
-    : [authItem, requisitionsItem, purchaseOrdersItem, suppliersItem, adminItem];
+    : [authItem, requisitionsItem, purchaseOrdersItem, suppliersItem, adminItem, catalogsItem];
 
   const collection = {
     info: {
@@ -115,6 +129,7 @@ export async function GET(req: NextRequest) {
       { key: "clientId",     value: "vlt_client_xxx", type: "string" },
       { key: "clientSecret", value: "vlt_secret_xxx", type: "string" },
       { key: "accessToken",  value: "",               type: "string" },
+      { key: "catalogId",    value: "",               type: "string" },
     ],
     item,
   };

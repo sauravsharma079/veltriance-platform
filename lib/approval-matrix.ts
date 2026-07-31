@@ -1,5 +1,14 @@
-import { ApprovalStepType } from "@prisma/client";
+import { ApprovalStepType, RequisitionStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+/** Single source of truth for "which requisition status does landing on this step type put us in?" */
+export const STATUS_FOR_STEP: Record<ApprovalStepType, RequisitionStatus> = {
+  [ApprovalStepType.MANAGER]: RequisitionStatus.MANAGER_APPROVAL,
+  [ApprovalStepType.DIRECTOR]: RequisitionStatus.DIRECTOR_APPROVAL,
+  [ApprovalStepType.PROCUREMENT]: RequisitionStatus.PROCUREMENT_REVIEW,
+  [ApprovalStepType.FINANCE]: RequisitionStatus.FINANCE_APPROVAL,
+  [ApprovalStepType.CUSTOM]: RequisitionStatus.PROCUREMENT_REVIEW,
+};
 
 export type ApprovalStepDef = {
   stepType: ApprovalStepType;

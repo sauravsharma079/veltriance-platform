@@ -54,6 +54,17 @@ export async function resolveUploadActor(
   return { actor: { organizationId: org.id, userId: profile.id, userName: profile.name, source: "session" } };
 }
 
+/**
+ * Same dual-auth shape as resolveUploadActor, for read endpoints that also
+ * need to work both from the dashboard UI and from an external API caller
+ * with a read-scoped bearer token (e.g. GET /api/catalogs).
+ */
+export async function resolveReadActor(
+  req: NextRequest, requiredScope: string
+): Promise<{ actor: UploadActor } | { error: string; status: number }> {
+  return resolveUploadActor(req, requiredScope);
+}
+
 export const apiOk  = (data: unknown, meta?: Record<string, unknown>) => Response.json({ ...meta, data });
 export const apiErr = (msg: string, status: number) => Response.json({ error: msg }, { status });
 

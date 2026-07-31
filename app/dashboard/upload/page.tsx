@@ -67,7 +67,7 @@ export default function UploadPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadCatalogs = useCallback(async () => {
-    const r = await fetch("/api/catalogs?type=HOSTED_CATALOG");
+    const r = await fetch("/api/catalogs?type=HOSTED");
     const d = await r.json();
     setCatalogs(Array.isArray(d.catalogs) ? d.catalogs.map((c:any)=>({id:c.id,name:c.name})) : []);
   }, []);

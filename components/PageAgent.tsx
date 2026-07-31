@@ -38,7 +38,6 @@ function getPageContext(pathname: string) {
     greeting: "Ready to raise a new purchase request?",
     actions: [
       { label: "Fill out a form",       description: "Structured intake with all fields", href: "/dashboard/intake/form" },
-      { label: "Use AI assistant",      description: "Chat-guided intake",                href: "/dashboard/intake/chat" },
       { label: "What gets approved?",   description: "Explain the approval flow" },
       { label: "Who approves my req?",  description: "How approval chains work" },
     ],

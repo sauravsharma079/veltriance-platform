@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Check, X, Clock, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Check, X, Clock, ShoppingCart, Send } from "lucide-react";
 
 type Requisition = {
   id: string;
@@ -22,6 +22,7 @@ type Requisition = {
   deliveryLocation: string | null;
   requiredDate: string | null;
   businessJustification: string | null;
+  customFieldAnswers: Record<string, string | number | boolean> | null;
   intakeSource: string;
   requestor: { name: string; email: string; department: string | null };
   lineItems: {
@@ -41,6 +42,8 @@ export default function RequisitionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   const load = useCallback(() => {
     fetch(`/api/requisitions/${id}`)
@@ -67,6 +70,16 @@ export default function RequisitionDetailPage() {
       load();
       router.refresh();
     }
+  }
+
+  async function submitForApproval() {
+    setSubmitting(true); setSubmitError("");
+    const res = await fetch(`/api/requisitions/${id}/submit`, { method: "POST" });
+    const d = await res.json();
+    setSubmitting(false);
+    if (!res.ok) { setSubmitError(d.error || "Failed to submit"); return; }
+    load();
+    router.refresh();
   }
 
   if (loading) return <div className="p-8 text-sm text-gray-400">Loading…</div>;
@@ -97,7 +110,37 @@ export default function RequisitionDetailPage() {
         {req.department && <InfoCard label="Department" value={req.department} />}
       </div>
 
+      {req.customFieldAnswers && Object.keys(req.customFieldAnswers).length > 0 && (
+        <div className="mb-6">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Category details{req.category ? ` (${req.category})` : ""}</p>
+          <div className="bg-white border border-gray-200 rounded-xl p-4 grid sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            {Object.entries(req.customFieldAnswers).map(([key, value]) => (
+              <div key={key} className="flex items-baseline justify-between gap-4 py-1 border-b border-gray-50 last:border-0">
+                <span className="text-gray-500 shrink-0 capitalize">{key.replace(/_/g, " ")}</span>
+                <span className="font-medium text-gray-800 text-right truncate">{String(value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ... status banners ... */}
+      {req.status === "DRAFT" && (
+        <div className="mb-6 bg-white border border-[#C8A04D]/30 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-800">
+              {req.intakeSource === "PUNCHOUT" ? "Review this punchout cart before submitting it for approval." : "This request is still a draft."}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">Check the line items below, then submit to start the approval chain.</p>
+            {submitError && <p className="text-xs text-red-600 mt-1">{submitError}</p>}
+          </div>
+          <button onClick={submitForApproval} disabled={submitting}
+            className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#243766] transition-colors disabled:opacity-50 shrink-0">
+            <Send className="size-4" /> {submitting ? "Submitting…" : "Submit for Approval"}
+          </button>
+        </div>
+      )}
+
       {req.status === "APPROVED" && (
         <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between">
           <div>

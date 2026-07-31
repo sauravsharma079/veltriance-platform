@@ -32,6 +32,8 @@ model Organization {
   contentGroups   ContentGroup[]
   integrations    Integration[]
   apiClients      ApiClient[]
+  catalogs        Catalog[]
+  punchoutSessions PunchoutSession[]
 
   @@index([slug])
 }
@@ -78,6 +80,7 @@ model User {
   userRoles             WorkspaceRoleMember[]
   contentGroupMembers   ContentGroupMember[]
   chartOfAccountAccess  UserChartOfAccount[]
+  punchoutSessions      PunchoutSession[]
 
   @@index([role])
   @@index([department])
@@ -156,6 +159,7 @@ model Supplier {
   requisitionLines   RequisitionLineItem[]
   purchaseOrders     PurchaseOrder[]
   purchaseOrderLines PurchaseOrderLineItem[]
+  catalogs           Catalog[]
 
   @@index([status])
   @@index([category])
@@ -197,6 +201,7 @@ enum RequisitionStatus {
 enum IntakeSource {
   FORM
   CHATBOT
+  PUNCHOUT
 }
 
 enum RequisitionPriority {
@@ -236,6 +241,7 @@ model Requisition {
   chartOfAccountId  String?
   chartOfAccount    ChartOfAccount?     @relation(fields: [chartOfAccountId], references: [id])
   glCoding          Json?
+  customFieldAnswers Json?             // Record<fieldKey, value> captured from category-scoped CustomFields
   erpTargetSystem   String?
   erpReferenceId    String?
   createdAt         DateTime            @default(now())
@@ -452,6 +458,7 @@ model CustomField {
   fieldType      CustomFieldType
   required       Boolean           @default(false)
   options        String[]
+  categories     String[]          @default([]) // Lookup(type=CATEGORY) labels this field applies to; empty = all categories
   helpText       String?
   sortOrder      Int               @default(0)
   active         Boolean           @default(true)
@@ -665,6 +672,109 @@ model IntegrationLog {
   @@index([integrationId])
   @@index([createdAt])
   @@index([level])
+}
+
+// ───────────────────────────── Catalogs & Punchout ───────────────────────────
+// A Catalog is either a HOSTED item list (managed in-app, browsable, ordered
+// directly) or a PUNCHOUT connection to a supplier's own hosted catalog via
+// the cXML PunchOut protocol (buyer is redirected to the supplier's site and
+// the resulting cart is returned via a PunchOutOrderMessage callback).
+
+enum CatalogType {
+  HOSTED
+  PUNCHOUT
+}
+
+enum CatalogStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Catalog {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  type           CatalogType
+  status         CatalogStatus @default(ACTIVE)
+  description    String?
+  supplierId     String?
+  supplier       Supplier?     @relation(fields: [supplierId], references: [id])
+
+  // PUNCHOUT-only cXML connection config (null for HOSTED catalogs)
+  punchoutUrl        String? // supplier's PunchOutSetupRequest endpoint
+  cxmlFromDomain     String?
+  cxmlFromIdentity   String? // buyer identity as registered with the supplier
+  cxmlToDomain       String?
+  cxmlToIdentity     String? // supplier identity
+  cxmlSenderDomain   String?
+  cxmlSenderIdentity String? // credential used to authenticate — often same as From
+  cxmlSharedSecret   String? // shared secret / password — never returned by the API
+  cxmlOptions        Json?   // escape hatch for nonstandard protocol needs
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items    CatalogItem[]
+  sessions PunchoutSession[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([organizationId, type, status])
+}
+
+model CatalogItem {
+  id          String   @id @default(uuid())
+  catalogId   String
+  catalog     Catalog  @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  sku         String
+  name        String
+  description String?
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  currency    String   @default("INR")
+  category    String?
+  glAccount   String?
+  unit        String?
+  leadDays    Int?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([catalogId, sku])
+  @@index([catalogId])
+}
+
+enum PunchoutSessionStatus {
+  PENDING
+  RETURNED
+  EXPIRED
+  ERROR
+}
+
+// Tracks an outstanding cXML punchout round-trip. The BuyerCookie is the
+// only correlation mechanism for the return callback — the supplier's site
+// posts back through the buyer's own browser, so no session cookie can be
+// relied on to identify who/what org/which catalog this belongs to.
+model PunchoutSession {
+  id              String                @id @default(uuid())
+  organizationId  String
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  catalogId       String
+  catalog         Catalog               @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  requestorId     String
+  requestor       User                  @relation(fields: [requestorId], references: [id])
+  buyerCookie     String                @unique
+  status          PunchoutSessionStatus @default(PENDING)
+  startPageUrl    String?
+  returnedCartXml String?               @db.Text
+  errorMessage    String?
+  requisitionId   String?
+  createdAt       DateTime              @default(now())
+  expiresAt       DateTime
+
+  @@index([organizationId])
+  @@index([catalogId])
+  @@index([buyerCookie])
 }
 
 // ─────────────────────────────── OAuth2 API Clients ──────────────────────────

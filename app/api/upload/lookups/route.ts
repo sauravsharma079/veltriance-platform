@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
           results.updated++;
         } else {
           const count = await prisma.lookup.count({ where: { organizationId, type } });
-          await prisma.lookup.create({ data: { organizationId, type, code, label, sortOrder: sort || count+1, isActive: true } });
+          await prisma.lookup.create({ data: { organizationId, type, code, label, sortOrder: sort || count+1, active: true } });
           results.created++;
         }
       } catch (e: any) { results.errors.push(e.message); }
