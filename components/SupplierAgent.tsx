@@ -123,6 +123,20 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
     push(MENU_MSG);
   }
 
+  // Lets other parts of the suppliers section (e.g. the "Onboard Supplier" button on
+  // the list page) open this bot and jump straight into onboarding, without lifting
+  // state through the layout — this component is mounted once in the section layout.
+  useEffect(() => {
+    function onOpenOnboard() {
+      setOpen(true);
+      setData({});
+      setStep("ADD_NAME");
+      setMessages([MENU_MSG, { role: "agent", text: "**Step 1 of 4 — Basic Info**\n\nWhat is the **company name**?" }]);
+    }
+    window.addEventListener("veltriance:onboard-supplier", onOpenOnboard);
+    return () => window.removeEventListener("veltriance:onboard-supplier", onOpenOnboard);
+  }, []);
+
   async function api<T = Record<string, unknown>>(
     url: string, method = "GET", body?: unknown
   ): Promise<{ ok: boolean; data: T }> {

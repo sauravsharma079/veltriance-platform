@@ -12,10 +12,12 @@ export async function GET(req: NextRequest) {
     if (!org) return NextResponse.json({ suppliers: [] });
     const q = req.nextUrl.searchParams.get("q") ?? "";
     const status = req.nextUrl.searchParams.get("status");
+    const stage = req.nextUrl.searchParams.get("stage");
     const suppliers = await prisma.supplier.findMany({
       where: {
         organizationId: org.id,
         ...(status ? { status: status as any } : {}),
+        ...(stage ? { onboardingStage: stage as any } : {}),
         ...(q ? { OR: [
           { name: { contains: q, mode: "insensitive" } },
           { code: { contains: q, mode: "insensitive" } },
