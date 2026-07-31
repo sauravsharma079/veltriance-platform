@@ -29,8 +29,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function RequisitionsPage() {
-  const [showReqUpload, setShowReqUpload] = useState(false);
-  const [requisitions, setRequisitions] = useState<Requisition[]>([]);
+    const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [loading, setLoading] = useState(true);
 

@@ -94,9 +94,7 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [modal, setModal] = useState<string|null>(null);
-  const [showLookupUpload, setShowLookupUpload] = useState(false);
-  const [showUserUpload, setShowUserUpload] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null);
+      const [editItem, setEditItem] = useState<any>(null);
   const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"" });
   const [ruleForm, setRuleForm] = useState({ name:"", priority:"10", minAmount:"", maxAmount:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager" }] });
   const [lookupForm, setLookupForm] = useState({ type:"DEPARTMENT", code:"", label:"" });
@@ -194,7 +192,7 @@ export default function AdminPage() {
         {loading ? <div className="flex items-center justify-center h-64"><div className="size-8 border-2 border-[#1A2A52]/20 border-t-[#1A2A52] rounded-full animate-spin"/></div> : <>
 
           {tab==="users"&&(
-              <>{showUserUpload && <CsvUploadModal config={{title:"Bulk Invite Users",description:"Upload users to invite. They will be created with PENDING status.",endpoint:"/api/upload/users",templateName:"veltriance_users_template",headers:["name","email","role","department","jobTitle"],requiredHeaders:["name","email"],exampleRows:[["Rajesh Kumar","rajesh.kumar@company.com","APPROVER","Engineering","Engineering Manager"],["Priya Sharma","priya.sharma@company.com","REQUESTOR","Finance","Finance Analyst"],["Amit Singh","amit.singh@company.com","PROCUREMENT","IT","IT Procurement Lead"]]}} onClose={()=>setShowUserUpload(false)} onSuccess={()=>{setShowUserUpload(false);loadAll();}}/>}<
+              <
             <div>
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-base font-semibold text-gray-900">Users & Invites <span className="text-sm font-normal text-gray-400 ml-1">{users.length} total</span></h2>
