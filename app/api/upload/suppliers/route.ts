@@ -20,14 +20,24 @@ export async function POST(req: NextRequest) {
         const name = (row.name || row.Name || row.NAME || "").trim();
         if (!name) { results.errors.push(`Row skipped: missing name`); continue; }
         const code = (row.code || row.Code || row.CODE || "").trim();
+        const taxId = (row.taxId || row.tax_id || row.taxID || "").trim();
+
         if (code) {
           const existing = await prisma.supplier.findFirst({ where: { organizationId, code } });
-          if (existing) { results.skipped++; continue; }
+          if (existing) { results.skipped++; results.errors.push(`Row "${name}" skipped: code ${code} already exists.`); continue; }
         }
+        // Fuzzy duplicate detection: same tax ID, or a case-insensitive exact name match.
+        if (taxId) {
+          const byTax = await prisma.supplier.findFirst({ where: { organizationId, taxId } });
+          if (byTax) { results.skipped++; results.errors.push(`Row "${name}" skipped: tax ID ${taxId} already belongs to "${byTax.name}".`); continue; }
+        }
+        const byName = await prisma.supplier.findFirst({ where: { organizationId, name: { equals: name, mode: "insensitive" } } });
+        if (byName) { results.skipped++; results.errors.push(`Row "${name}" skipped: a supplier named "${byName.name}" already exists (possible duplicate).`); continue; }
+
         const count = await prisma.supplier.count({ where: { organizationId } });
         const autoCode = code || `SUP-${String(count + 101).padStart(3, "0")}`;
         await prisma.supplier.create({ data: {
-          organizationId, name, code: autoCode,
+          organizationId, name, code: autoCode, taxId: taxId || null,
           status: "ACTIVE", onboardingStage: "ACTIVE",
           category:     (row.category || row.Category || "").trim() || null,
           contactEmail: (row.contactEmail || row.contact_email || row.email || "").trim() || null,

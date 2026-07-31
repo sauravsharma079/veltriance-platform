@@ -58,6 +58,7 @@ const createSchema = z.object({
   required: z.boolean().default(false),
   options: z.array(z.string()).default([]),
   categories: z.array(z.string()).default([]),
+  conditions: z.record(z.string(), z.array(z.string())).optional(),
   helpText: z.string().optional(),
 });
 
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
         required: d.required,
         options: d.options,
         categories: d.categories,
+        conditions: d.conditions ?? undefined,
         helpText: d.helpText,
         sortOrder: count + 1,
       },

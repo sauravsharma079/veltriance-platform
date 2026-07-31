@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { recomputeAndSaveSupplierRisk } from "@/lib/supplier-risk";
 
 async function getCtx() {
   const sb = await createClient();
@@ -16,21 +17,27 @@ async function getCtx() {
 }
 
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string; docId: string }> }) {
-  const { docId } = await context.params;
+  const { id, docId } = await context.params;
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
   const doc = await prisma.supplierDocument.update({
     where: { id: docId },
-    data: { status: body.status, rejectedNote: body.rejectedNote || null, verifiedAt: body.status === "VERIFIED" ? new Date() : null },
+    data: {
+      status: body.status, rejectedNote: body.rejectedNote || null,
+      verifiedAt: body.status === "VERIFIED" ? new Date() : null,
+      ...(body.expiryDate !== undefined && { expiryDate: body.expiryDate ? new Date(body.expiryDate) : null }),
+    },
   });
-  return NextResponse.json({ document: doc });
+  const riskBreakdown = await recomputeAndSaveSupplierRisk(id);
+  return NextResponse.json({ document: doc, riskBreakdown });
 }
 
 export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string; docId: string }> }) {
-  const { docId } = await context.params;
+  const { id, docId } = await context.params;
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await prisma.supplierDocument.delete({ where: { id: docId } });
-  return NextResponse.json({ success: true });
+  const riskBreakdown = await recomputeAndSaveSupplierRisk(id);
+  return NextResponse.json({ success: true, riskBreakdown });
 }

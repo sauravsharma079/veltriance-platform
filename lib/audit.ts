@@ -23,14 +23,19 @@ export interface AuditEvent {
 
 let auditIntegrationId: Record<string, string> = {};
 
+// The audit trail piggybacks on the generic Integration/IntegrationLog tables
+// (key="audit_log") rather than a dedicated model. Integration has no `type`/
+// `provider` field and IntegrationLog has no `organizationId`/`status`/`request`/
+// `response`/`duration` fields — this previously referenced columns that don't
+// exist in the schema, so every logAudit() call silently no-op'd via the catch below.
 async function getAuditIntegration(organizationId: string): Promise<string> {
   if (auditIntegrationId[organizationId]) return auditIntegrationId[organizationId];
   let existing = await prisma.integration.findFirst({
-    where: { organizationId, type: "AUDIT_LOG" },
+    where: { organizationId, key: "audit_log" },
   });
   if (!existing) {
-    existing = await (prisma.integration.create as any)({
-      data: { organizationId, name: "Audit Log", type: "AUDIT_LOG", status: "ACTIVE", provider: "INTERNAL", config: {} },
+    existing = await prisma.integration.create({
+      data: { organizationId, key: "audit_log", name: "Audit Log", status: "CONNECTED" },
     });
   }
   auditIntegrationId[organizationId] = existing.id;
@@ -40,13 +45,13 @@ async function getAuditIntegration(organizationId: string): Promise<string> {
 export async function logAudit(event: AuditEvent): Promise<void> {
   try {
     const integrationId = await getAuditIntegration(event.organizationId);
-    await (prisma.integrationLog.create as any)({
+    await prisma.integrationLog.create({
       data: {
         integrationId,
-        organizationId: event.organizationId,
+        level: "INFO",
         event: `${event.entity}.${event.action}`,
-        status: "SUCCESS",
-        request: {
+        message: `${event.action} ${event.entity}${event.entityLabel ? `: ${event.entityLabel}` : ""}`,
+        meta: {
           userId: event.userId,
           userName: event.userName,
           entity: event.entity,
@@ -57,8 +62,6 @@ export async function logAudit(event: AuditEvent): Promise<void> {
           ipAddress: event.ipAddress,
           timestamp: new Date().toISOString(),
         },
-        response: {},
-        duration: 0,
       },
     });
   } catch (e: any) {
@@ -69,18 +72,17 @@ export async function logAudit(event: AuditEvent): Promise<void> {
 
 export async function getAuditLogs(organizationId: string, opts?: { limit?: number; entity?: string; action?: string }) {
   try {
-    const integration = await prisma.integration.findFirst({ where: { organizationId, type: "AUDIT_LOG" } });
+    const integration = await prisma.integration.findFirst({ where: { organizationId, key: "audit_log" } });
     if (!integration) return [];
-    const logs = await (prisma.integrationLog.findMany as any)({
+    const logs = await prisma.integrationLog.findMany({
       where: {
         integrationId: integration.id,
-        organizationId,
         ...(opts?.entity ? { event: { contains: opts.entity } } : {}),
         ...(opts?.action ? { event: { endsWith: opts.action } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: opts?.limit || 100,
     });
-    return logs;
+    return logs.map(l => ({ id: l.id, event: l.event, status: "SUCCESS", createdAt: l.createdAt, request: l.meta as Record<string, unknown> }));
   } catch { return []; }
 }

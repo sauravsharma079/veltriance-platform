@@ -18,9 +18,11 @@ type Step =
   | "ADD_PHONE" | "ADD_CITY" | "ADD_JUSTIFICATION" | "ADD_CONFIRM"
   | "PROFILE_LEGAL" | "PROFILE_TYPE" | "PROFILE_PAN" | "PROFILE_GST" | "PROFILE_MSME"
   | "BANK_BENEFICIARY" | "BANK_NAME" | "BANK_ACCOUNT" | "BANK_IFSC" | "BANK_TYPE"
-  | "COMPLIANCE"
+  | "COMPLIANCE" | "QUESTIONNAIRE"
   | "DOCS_SEARCH" | "DOCS_TYPE"
-  | "SEARCH" | "ADVANCE";
+  | "SEARCH" | "ADVANCE" | "RISK_LOOKUP";
+
+type QuestField = { fieldKey: string; name: string; fieldType: string; options: string[]; required: boolean; helpText?: string | null };
 
 type Data = {
   name?: string; category?: string; contactName?: string; contactEmail?: string;
@@ -30,6 +32,7 @@ type Data = {
   bankName?: string; accountNumber?: string; ifscCode?: string; accountType?: string;
   womenOwned?: boolean; minorityOwned?: boolean; smallBusiness?: boolean;
   supplierId?: string; supplierName?: string; docSupplierId?: string; docSupplierName?: string;
+  questFields?: QuestField[]; questIdx?: number; questAnswers?: Record<string, string>;
 };
 
 const FALLBACK_CATS = [
@@ -79,6 +82,7 @@ const MENU_MSG: Msg = {
     "🔍 Search for a supplier",
     "📄 Add document to supplier",
     "⬆️  Advance supplier stage",
+    "📊 Explain supplier risk",
   ],
 };
 
@@ -160,8 +164,11 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
           } else if (t.includes("5") || t.includes("advance")) {
             setStep("ADVANCE");
             push({ role: "agent", text: "Enter the **supplier code** (e.g. SUP-001) to advance their onboarding stage:" });
+          } else if (t.includes("6") || t.includes("risk")) {
+            setStep("RISK_LOOKUP");
+            push({ role: "agent", text: "Enter the **supplier code or name** to explain its risk assessment:" });
           } else {
-            push({ role: "agent", text: "Please choose 1–5 or click a button above.", options: MENU_MSG.options });
+            push({ role: "agent", text: "Please choose 1–6 or click a button above.", options: MENU_MSG.options });
           }
           break;
         }
@@ -326,6 +333,18 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
             smallBusiness: o.includes("small"),
           }));
           await doSaveProfile();
+          break;
+        }
+
+        // ── DYNAMIC QUESTIONNAIRE ─────────────────────────────────────────────
+        case "QUESTIONNAIRE": {
+          await doQuestionnaireAnswer(text, skip);
+          break;
+        }
+
+        // ── RISK EXPLAIN ──────────────────────────────────────────────────────
+        case "RISK_LOOKUP": {
+          await doExplainRisk(text);
           break;
         }
 
@@ -555,17 +574,91 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
     setMessages(p => p.filter(m => m.role !== "loading"));
 
     if (!ok) {
-      push({ role: "error", text: "Failed to save profile. Please try again." });
-    } else {
-      push({
-        role: "success",
-        text: `✅ **Onboarding profile saved!**\n\nCompletion: **${d.completionScore ?? 0}%**\n\nNow let's add the required compliance documents:\n• PAN Card\n• GST Certificate\n• Certificate of Incorporation\n• Cancelled Cheque`,
-        options: ["📄 Add required documents", "✅ Done for now"],
-      });
-      onRefresh?.();
+      const err = (d as { error?: string }).error || "Failed to save profile. Please try again.";
+      push({ role: "error", text: err });
+      if (err.includes("panNumber")) { setStep("PROFILE_PAN"); push({ role: "agent", text: "Please re-enter a valid **PAN number** (e.g. ABCDE1234F)." }); }
+      else if (err.includes("gstNumber")) { setStep("PROFILE_GST"); push({ role: "agent", text: "Please re-enter a valid **GST number**." }); }
+      else if (err.includes("ifscCode")) { setStep("BANK_IFSC"); push({ role: "agent", text: "Please re-enter a valid **IFSC code** (e.g. HDFC0001234)." }); }
+      else { setStep("PROFILE_LEGAL"); push({ role: "agent", text: "Let's redo the business profile — what is the **legal / registered company name**?" }); }
+      return;
     }
+
+    push({
+      role: "success",
+      text: `✅ **Onboarding profile saved!**\n\nCompletion: **${d.completionScore ?? 0}%**`,
+    });
+    onRefresh?.();
+
+    const { data: q } = await api<{ fields: QuestField[] }>(`/api/suppliers/${data.supplierId}/questionnaire`);
+    const fields = q.fields ?? [];
+    if (fields.length > 0) {
+      setData(d2 => ({ ...d2, questFields: fields, questIdx: 0, questAnswers: {} }));
+      setStep("QUESTIONNAIRE");
+      const f = fields[0];
+      push({ role: "agent", text: `This organization has a few extra questions for suppliers like this one.\n\n**${f.name}**${f.helpText ? `\n${f.helpText}` : ""}${f.required ? "" : " (type 'skip' to skip)"}`, options: f.fieldType === "DROPDOWN" ? f.options : undefined });
+      return;
+    }
+
+    push({
+      role: "agent",
+      text: `Now let's add the required compliance documents:\n• PAN Card\n• GST Certificate\n• Certificate of Incorporation\n• Cancelled Cheque`,
+      options: ["📄 Add required documents", "✅ Done for now"],
+    });
     setStep("DOCS_TYPE");
     setData(d2 => ({ ...d2, docSupplierId: d2.supplierId, docSupplierName: d2.supplierName }));
+  }
+
+  async function doQuestionnaireAnswer(text: string, skip: boolean) {
+    const fields = data.questFields ?? [];
+    const idx = data.questIdx ?? 0;
+    const f = fields[idx];
+    if (!f) { setStep("DOCS_TYPE"); return; }
+    if (f.required && !text.trim()) {
+      push({ role: "agent", text: `**${f.name}** is required.`, options: f.fieldType === "DROPDOWN" ? f.options : undefined });
+      return;
+    }
+    const answers = { ...(data.questAnswers ?? {}), [f.fieldKey]: skip ? "" : text.trim() };
+    const nextIdx = idx + 1;
+    if (nextIdx >= fields.length) {
+      push({ role: "loading", text: "Saving answers…" });
+      const { ok } = await api(`/api/suppliers/${data.supplierId}/questionnaire`, "POST", { answers });
+      setMessages(p => p.filter(m => m.role !== "loading"));
+      push({ role: ok ? "success" : "error", text: ok ? "✅ Saved additional details." : "Some answers didn't save — you can update them later from the supplier detail page." });
+      setData(d2 => ({ ...d2, questAnswers: answers }));
+      push({
+        role: "agent",
+        text: `Now let's add the required compliance documents:\n• PAN Card\n• GST Certificate\n• Certificate of Incorporation\n• Cancelled Cheque`,
+        options: ["📄 Add required documents", "✅ Done for now"],
+      });
+      setStep("DOCS_TYPE");
+      setData(d2 => ({ ...d2, docSupplierId: d2.supplierId, docSupplierName: d2.supplierName }));
+    } else {
+      setData(d2 => ({ ...d2, questAnswers: answers, questIdx: nextIdx }));
+      const nf = fields[nextIdx];
+      push({ role: "agent", text: `**${nf.name}**${nf.helpText ? `\n${nf.helpText}` : ""}${nf.required ? "" : " (type 'skip' to skip)"}`, options: nf.fieldType === "DROPDOWN" ? nf.options : undefined });
+    }
+  }
+
+  async function doExplainRisk(query: string) {
+    push({ role: "loading", text: "Looking up supplier…" });
+    const { data: d } = await api<{ suppliers: { id: string; name: string }[] }>(`/api/suppliers?q=${encodeURIComponent(query)}`);
+    setMessages(p => p.filter(m => m.role !== "loading"));
+    const sups = d.suppliers ?? [];
+    if (!sups.length) { push({ role: "agent", text: `No supplier found matching **"${query}"**.` }); goMenu(); return; }
+    const sup = sups[0];
+
+    push({ role: "loading", text: `Computing risk assessment for ${sup.name}…` });
+    const { ok, data: rd } = await api<{ breakdown: import("@/lib/supplier-risk").RiskBreakdown }>(`/api/suppliers/${sup.id}/risk-assessment`, "POST");
+    setMessages(p => p.filter(m => m.role !== "loading"));
+    if (!ok || !rd.breakdown) { push({ role: "error", text: "Could not compute a risk assessment for this supplier." }); goMenu(); return; }
+
+    const b = rd.breakdown;
+    const lines = b.domains.map(dm => `**${dm.domain}** — ${dm.score}/100\n${dm.rationale.map(r => `  • ${r}`).join("\n")}`).join("\n\n");
+    push({
+      role: "agent",
+      text: `📊 **${sup.name}** — Risk Score **${b.riskScore}/100** (${b.riskLevel}) · Compliance **${b.complianceScore}%**\n\n${lines}\n\n_Not yet assessed (needs a connected data source): ${b.unscored.map(u => u.domain).join(", ")}._`,
+    });
+    goMenu();
   }
 
   async function doFindSupplierForDoc(query: string) {

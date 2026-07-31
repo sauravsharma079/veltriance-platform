@@ -152,6 +152,11 @@ model Supplier {
   requestedBy     User?          @relation("SupplierRequestedBy", fields: [requestedById], references: [id])
   approvedAt      DateTime?
   notes           String?
+  customFieldAnswers Json?       // Record<fieldKey, value> for entity=SUPPLIER CustomFields (Dynamic Questionnaire Engine)
+  riskBreakdown   Json?          // domain-by-domain risk breakdown + rationale from the last risk assessment
+  erpSupplierId   String?        // vendor/supplier ID as created in the connected ERP, once synced
+  erpSyncStatus   String?        // NOT_SYNCED | SYNCING | SYNCED | FAILED
+  erpSyncedAt     DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -161,6 +166,9 @@ model Supplier {
   purchaseOrderLines PurchaseOrderLineItem[]
   catalogs           Catalog[]
   catalogItems       CatalogItem[]
+  documents          SupplierDocument[]
+  messages           SupplierMessage[]
+  onboardingProfile  SupplierOnboardingProfile?
 
   @@index([status])
   @@index([category])
@@ -180,6 +188,77 @@ model SupplierContact {
   department  String?
   isPrimary   Boolean  @default(false)
   createdAt   DateTime @default(now())
+
+  @@index([supplierId])
+}
+
+// Deep onboarding data (tax, banking, registered address, diversity flags) captured
+// via the SupplierAgent bot or supplier portal — separate from the lightweight
+// Supplier record so onboarding can be resumed/edited without touching core fields.
+model SupplierOnboardingProfile {
+  id                String   @id @default(uuid())
+  supplierId        String   @unique
+  supplier          Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  legalName         String?
+  businessType      String?
+  panNumber         String?
+  gstNumber         String?
+  msmeNumber        String?
+  beneficiaryName   String?
+  bankName          String?
+  accountNumber     String?
+  ifscCode          String?
+  accountType       String?
+  regAddressLine1   String?
+  regCity           String?
+  regState          String?
+  regPostal         String?
+  womenOwned        Boolean  @default(false)
+  minorityOwned     Boolean  @default(false)
+  smallBusiness     Boolean  @default(false)
+  completionScore   Int      @default(0)
+  validation        Json?    // per-field tax/bank validation results (format/checksum), see lib/validators.ts
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+model SupplierDocument {
+  id           String         @id @default(uuid())
+  supplierId   String
+  supplier     Supplier       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  type         String         // PAN_CARD | GST_CERTIFICATE | INCORPORATION_CERTIFICATE | MSME_CERTIFICATE | CANCELLED_CHEQUE | BANK_STATEMENT | ISO_CERTIFICATE | NDA | MSA | OTHER
+  name         String
+  fileUrl      String
+  mimeType     String?
+  status       DocumentStatus @default(PENDING)
+  expiryDate   DateTime?
+  rejectedNote String?
+  verifiedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([supplierId])
+  @@index([supplierId, status])
+}
+
+// Free-form messages exchanged between the buyer org and a supplier during
+// onboarding (fromPortal=true means the supplier sent it via the supplier portal).
+model SupplierMessage {
+  id         String   @id @default(uuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  fromPortal Boolean  @default(false)
+  senderName String?
+  subject    String?
+  body       String
+  createdAt  DateTime @default(now())
 
   @@index([supplierId])
 }
@@ -460,6 +539,7 @@ model CustomField {
   required       Boolean           @default(false)
   options        String[]
   categories     String[]          @default([]) // Lookup(type=CATEGORY) labels this field applies to; empty = all categories
+  conditions     Json?             // Dynamic Questionnaire Engine: e.g. {"country":["India"],"riskLevel":["HIGH","CRITICAL"]} — AND-matched against the entity; empty/null = always applicable
   helpText       String?
   sortOrder      Int               @default(0)
   active         Boolean           @default(true)
