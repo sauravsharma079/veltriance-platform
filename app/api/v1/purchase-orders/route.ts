@@ -1,16 +1,42 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { validateApiRequest, apiOk, apiErr, parsePagination, pagMeta } from "@/lib/api-auth";
+import crypto from "crypto";
+
+async function auth(req: NextRequest): Promise<{ organizationId:string; scopes:string[] }|null> {
+  const h = req.headers.get("authorization")||"";
+  if(!h.startsWith("Bearer ")) return null;
+  const tok = h.slice(7);
+  const hash = crypto.createHash("sha256").update(tok).digest("hex");
+  try {
+    const t = await (prisma.apiToken.findFirst as any)({ where:{ token:hash, expiresAt:{gt:new Date()} } });
+    if(t) return { organizationId:t.organizationId, scopes:t.scopes };
+  } catch {}
+  const clients = await prisma.apiClient.findMany({ where:{ active:true } });
+  for(const c of clients) {
+    const cc=c as any;
+    if((cc.clientSecretHash&&cc.clientSecretHash===hash)||(cc.clientSecret&&cc.clientSecret===tok))
+      return { organizationId:cc.organizationId, scopes:cc.scopes||[] };
+  }
+  return null;
+}
+
 export async function GET(req: NextRequest) {
-  const a = await validateApiRequest(req, "purchase_orders:read");
-  if ("error" in a) return apiErr(a.error, a.status);
-  const { offset, limit } = parsePagination(req); const u = new URL(req.url);
-  const w: Record<string,unknown> = { organizationId: a.ctx.organizationId };
-  const s = u.searchParams.get("status"); const sp = u.searchParams.get("supplier_id");
-  if (s) w.status = s.toUpperCase(); if (sp) w.supplierId = sp;
-  const [total, data] = await Promise.all([
-    prisma.purchaseOrder.count({ where: w }),
-    prisma.purchaseOrder.findMany({ where: w, orderBy:{createdAt:"desc"}, skip:offset, take:limit, include:{supplier:{select:{id:true,name:true,code:true}},createdBy:{select:{id:true,name:true}},lineItems:true} }),
-  ]);
-  return apiOk(data, pagMeta(total, offset, limit, "/api/v1/purchase-orders"));
+  const a = await auth(req);
+  if(!a) return NextResponse.json({ error:"Unauthorized" }, { status:401 });
+  if(!a.scopes.includes("purchase_orders:read")) return NextResponse.json({ error:"Forbidden: requires purchase_orders:read" }, { status:403 });
+  try {
+    const { searchParams:sp } = req.nextUrl;
+    const status = sp.get("status")||undefined;
+    const offset = parseInt(sp.get("offset")||"0");
+    const limit  = Math.min(parseInt(sp.get("limit")||"50"),200);
+    const [data,total] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where:{ organizationId:a.organizationId, ...(status?{status:status as any}:{}) },
+        orderBy:{ createdAt:"desc" }, skip:offset, take:limit,
+        include:{ supplier:{ select:{name:true,code:true} }, lineItems:true },
+      }),
+      prisma.purchaseOrder.count({ where:{ organizationId:a.organizationId } }),
+    ]);
+    return NextResponse.json({ data, pagination:{ total,offset,limit } });
+  } catch(e:any) { return NextResponse.json({ error:e.message }, { status:500 }); }
 }

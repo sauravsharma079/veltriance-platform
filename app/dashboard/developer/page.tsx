@@ -457,9 +457,27 @@ export default function DeveloperPage() {
       </aside>
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-4xl">
-          {tab === "quickstart" && (<><h1 className="text-xl font-semibold text-gray-900 mb-1">Quick start</h1><p className="text-sm text-gray-500 mb-6">Get your first API call working in under 5 minutes.</p><QuickStart /></>)}
-          {tab === "clients"    && (<><h1 className="text-xl font-semibold text-gray-900 mb-1">API clients</h1><p className="text-sm text-gray-500 mb-6">Manage OAuth 2.0 credentials for external systems.</p><ApiClients /></>)}
-          {tab === "reference"  && (<><h1 className="text-xl font-semibold text-gray-900 mb-1">API reference</h1><p className="text-sm text-gray-500 mb-6">All available endpoints with parameters and example responses.</p><ApiReference /></>)}
+          {tab === "quickstart" && (<><div className="flex items-center justify-between mb-6">
+          <a href="/api/developer/postman" download className="flex items-center gap-2 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5">
+            <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+            Download Postman Collection
+          </a>
+        </div>
+        <h1 className="text-xl font-semibold text-gray-900 mb-1">Quick start</h1><p className="text-sm text-gray-500 mb-6">Get your first API call working in under 5 minutes.</p><QuickStart /></>)}
+          {tab === "clients"    && (<><div className="flex items-center justify-between mb-6">
+          <a href="/api/developer/postman" download className="flex items-center gap-2 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5">
+            <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+            Download Postman Collection
+          </a>
+        </div>
+        <h1 className="text-xl font-semibold text-gray-900 mb-1">API clients</h1><p className="text-sm text-gray-500 mb-6">Manage OAuth 2.0 credentials for external systems.</p><ApiClients /></>)}
+          {tab === "reference"  && (<><div className="flex items-center justify-between mb-6">
+          <a href="/api/developer/postman" download className="flex items-center gap-2 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5">
+            <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+            Download Postman Collection
+          </a>
+        </div>
+        <h1 className="text-xl font-semibold text-gray-900 mb-1">API reference</h1><p className="text-sm text-gray-500 mb-6">All available endpoints with parameters and example responses.</p><ApiReference /></>)}
         </div>
       </main>
     </div>

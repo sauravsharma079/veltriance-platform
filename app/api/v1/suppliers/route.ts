@@ -1,21 +1,38 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { validateApiRequest, apiOk, apiErr, parsePagination, pagMeta } from "@/lib/api-auth";
-export async function GET(req: NextRequest) {
-  const a = await validateApiRequest(req, "suppliers:read");
-  if ("error" in a) return apiErr(a.error, a.status);
-  const { offset, limit } = parsePagination(req); const u = new URL(req.url);
-  const w: Record<string,unknown> = { organizationId: a.ctx.organizationId };
-  const s=u.searchParams.get("status"); const c=u.searchParams.get("category"); const q=u.searchParams.get("q");
-  if(s) w.status=s.toUpperCase(); if(c) w.category={contains:c,mode:"insensitive"}; if(q) w.name={contains:q,mode:"insensitive"};
-  const [total,data] = await Promise.all([prisma.supplier.count({where:w}), prisma.supplier.findMany({where:w,orderBy:{name:"asc"},skip:offset,take:limit})]);
-  return apiOk(data, pagMeta(total, offset, limit, "/api/v1/suppliers"));
+import crypto from "crypto";
+
+async function auth(req: NextRequest): Promise<{ organizationId:string; scopes:string[] }|null> {
+  const h = req.headers.get("authorization")||"";
+  if (!h.startsWith("Bearer ")) return null;
+  const tok = h.slice(7);
+  const hash = crypto.createHash("sha256").update(tok).digest("hex");
+  try {
+    const t = await (prisma.apiToken.findFirst as any)({ where:{ token:hash, expiresAt:{gt:new Date()} } });
+    if(t) return { organizationId:t.organizationId, scopes:t.scopes };
+  } catch {}
+  const clients = await prisma.apiClient.findMany({ where:{ active:true } });
+  for(const c of clients) {
+    const cc=c as any;
+    if((cc.clientSecretHash&&cc.clientSecretHash===hash)||(cc.clientSecret&&cc.clientSecret===tok))
+      return { organizationId:cc.organizationId, scopes:cc.scopes||[] };
+  }
+  return null;
 }
-export async function POST(req: NextRequest) {
-  const a = await validateApiRequest(req, "suppliers:write");
-  if ("error" in a) return apiErr(a.error, a.status);
-  let b: Record<string,unknown>; try { b = await req.json(); } catch { return apiErr("Invalid JSON",400); }
-  if (!b.name) return apiErr("name required",422); if (!b.contact_email) return apiErr("contact_email required",422);
-  const d = await prisma.supplier.create({ data:{ organizationId:a.ctx.organizationId, name:b.name as string, contactEmail:b.contact_email as string, contactName:b.contact_name as string|undefined, category:b.category as string|undefined, currency:(b.currency as string|undefined)??"USD", status:"PENDING_APPROVAL" } });
-  return Response.json({ data:d }, { status:201 });
+
+export async function GET(req: NextRequest) {
+  const a = await auth(req);
+  if(!a) return NextResponse.json({ error:"Unauthorized" }, { status:401 });
+  if(!a.scopes.includes("suppliers:read")) return NextResponse.json({ error:"Forbidden: requires suppliers:read" }, { status:403 });
+  try {
+    const { searchParams:sp } = req.nextUrl;
+    const status = sp.get("status")||undefined;
+    const offset = parseInt(sp.get("offset")||"0");
+    const limit  = Math.min(parseInt(sp.get("limit")||"50"),200);
+    const [data,total] = await Promise.all([
+      prisma.supplier.findMany({ where:{ organizationId:a.organizationId, ...(status?{status:status as any}:{}) }, orderBy:{ name:"asc" }, skip:offset, take:limit }),
+      prisma.supplier.count({ where:{ organizationId:a.organizationId, ...(status?{status:status as any}:{}) } }),
+    ]);
+    return NextResponse.json({ data, pagination:{ total,offset,limit } });
+  } catch(e:any) { return NextResponse.json({ error:e.message }, { status:500 }); }
 }

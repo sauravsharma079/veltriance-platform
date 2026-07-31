@@ -1,31 +1,48 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { validateApiRequest, apiOk, apiErr, parsePagination, pagMeta } from "@/lib/api-auth";
+import crypto from "crypto";
 
-export async function GET(req: NextRequest) {
-  const a = await validateApiRequest(req, "requisitions:read");
-  if ("error" in a) return apiErr(a.error, a.status);
-  const { offset, limit } = parsePagination(req);
-  const u = new URL(req.url);
-  const w: Record<string, unknown> = { organizationId: a.ctx.organizationId };
-  const s = u.searchParams.get("status"); const p = u.searchParams.get("priority"); const c = u.searchParams.get("category");
-  if (s) w.status = s.toUpperCase(); if (p) w.priority = p.toUpperCase(); if (c) w.category = { contains: c, mode: "insensitive" };
-  const [total, data] = await Promise.all([
-    prisma.requisition.count({ where: w }),
-    prisma.requisition.findMany({ where: w, orderBy: { createdAt: "desc" }, skip: offset, take: limit, include: { requestor: { select: { id:true,name:true,email:true } }, lineItems: true } }),
-  ]);
-  return apiOk(data, pagMeta(total, offset, limit, "/api/v1/requisitions"));
+async function authenticate(req: NextRequest): Promise<{ organizationId:string; scopes:string[] }|null> {
+  const auth = req.headers.get("authorization") || "";
+  if (!auth.startsWith("Bearer ")) return null;
+  const token = auth.slice(7);
+  const hash  = crypto.createHash("sha256").update(token).digest("hex");
+  try {
+    const t = await (prisma.apiToken.findFirst as any)({ where: { token: hash, expiresAt: { gt: new Date() } } });
+    if (t) return { organizationId: t.organizationId, scopes: t.scopes };
+  } catch {}
+  // Fallback: check if token matches any client secret directly
+  const clients = await prisma.apiClient.findMany({ where: { active: true } });
+  for (const c of clients) {
+    const cc = c as any;
+    if ((cc.clientSecretHash && cc.clientSecretHash === hash) ||
+        (cc.clientSecret && cc.clientSecret === token)) {
+      return { organizationId: cc.organizationId, scopes: cc.scopes || [] };
+    }
+  }
+  return null;
 }
 
-export async function POST(req: NextRequest) {
-  const a = await validateApiRequest(req, "requisitions:write");
-  if ("error" in a) return apiErr(a.error, a.status);
-  let b: Record<string, unknown>; try { b = await req.json(); } catch { return apiErr("Invalid JSON", 400); }
-  if (!b.title) return apiErr("title required", 422);
-  if (!b.requestor_id) return apiErr("requestor_id required", 422);
-  const r = await prisma.user.findFirst({ where: { id: b.requestor_id as string, organizationId: a.ctx.organizationId } });
-  if (!r) return apiErr("requestor_id not found", 422);
-  const n = await prisma.requisition.count({ where: { organizationId: a.ctx.organizationId } });
-  const d = await prisma.requisition.create({ data: { organizationId: a.ctx.organizationId, requisitionNumber: `REQ-${String(n+1).padStart(6,"0")}`, title: b.title as string, description: b.description as string|undefined, category: b.category as string|undefined, priority: ((b.priority as string|undefined)?.toUpperCase() ?? "MEDIUM") as "LOW"|"MEDIUM"|"HIGH"|"CRITICAL", status: "DRAFT", intakeSource: "FORM", requestorId: r.id, currency: (b.currency as string|undefined) ?? "USD" } });
-  return Response.json({ data: d }, { status: 201 });
+function err(msg:string, status=400) { return NextResponse.json({ error:msg }, { status }); }
+
+export async function GET(req: NextRequest) {
+  const auth = await authenticate(req);
+  if (!auth) return err("Unauthorized", 401);
+  if (!auth.scopes.includes("requisitions:read")) return err("Forbidden: requires requisitions:read scope", 403);
+  try {
+    const { searchParams: sp } = req.nextUrl;
+    const status   = sp.get("status")   || undefined;
+    const priority = sp.get("priority") || undefined;
+    const offset   = parseInt(sp.get("offset") || "0");
+    const limit    = Math.min(parseInt(sp.get("limit") || "50"), 200);
+    const [data, total] = await Promise.all([
+      prisma.requisition.findMany({
+        where: { organizationId: auth.organizationId, ...(status?{status:status as any}:{}), ...(priority?{priority:priority as any}:{}) },
+        orderBy: { createdAt: "desc" }, skip: offset, take: limit,
+        include: { requestor: { select: { name:true, email:true } }, lineItems: { select: { description:true, quantity:true, unitPrice:true, glAccount:true } } },
+      }),
+      prisma.requisition.count({ where: { organizationId: auth.organizationId, ...(status?{status:status as any}:{}) } }),
+    ]);
+    return NextResponse.json({ data, pagination: { total, offset, limit } });
+  } catch (e:any) { return err(e.message, 500); }
 }

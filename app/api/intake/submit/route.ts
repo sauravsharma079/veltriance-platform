@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { generateRequisitionNumber } from "@/lib/requisition-number";
 import { resolveApprovalSteps } from "@/lib/approval-matrix";
+import { logAudit } from "@/lib/audit";
 import { getCurrentOrganization } from "@/lib/tenant";
 
 const lineItemSchema = z.object({
