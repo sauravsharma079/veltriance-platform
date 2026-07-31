@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Supplier, SupplierOnboardingProfile, SupplierDocument } from "@prisma/client";
+import { requirementsFor } from "@/lib/onboarding-requirements";
 
 // Deterministic, explainable risk & compliance scoring from data actually present in
 // this database — no black-box ML call, no fabricated numbers. riskScore is 0-100
@@ -15,20 +16,17 @@ import type { Supplier, SupplierOnboardingProfile, SupplierDocument } from "@pri
 // plausible-looking numbers for those, they're listed as `unscored` with the reason,
 // so the UI can say "not assessed — connect a provider" instead of lying.
 
-const REQUIRED_DOC_TYPES = ["PAN_CARD", "GST_CERTIFICATE", "INCORPORATION_CERTIFICATE", "CANCELLED_CHEQUE"];
-
 // Illustrative starter list only — not a substitute for a licensed sanctions/embargo
 // screening provider (OFAC SDN, UN, EU consolidated lists, etc).
 const HIGH_RISK_COUNTRIES = new Set(["North Korea", "Iran", "Syria", "Cuba", "Russia", "Belarus", "Myanmar"]);
 
-const UNSCORED_DOMAINS = [
+const ALWAYS_UNSCORED_DOMAINS = [
   { domain: "Cyber Security", reason: "requires a connected cyber-risk rating provider (e.g. BitSight, SecurityScorecard)" },
   { domain: "ESG", reason: "requires a connected ESG data provider (e.g. EcoVadis)" },
   { domain: "Reputational", reason: "requires connected adverse-media / news screening" },
   { domain: "Information Security", reason: "requires SOC2/ISO27001 certificate verification workflow" },
   { domain: "Data Privacy", reason: "requires GDPR/DPA questionnaire responses" },
-  { domain: "Business Continuity", reason: "requires BCP/DR questionnaire responses" },
-  { domain: "Insurance", reason: "requires insurance certificate upload + expiry tracking" },
+  { domain: "Modern Slavery", reason: "requires a supply-chain transparency audit" },
   { domain: "Health & Safety", reason: "requires H&S questionnaire responses" },
 ];
 
@@ -67,11 +65,12 @@ export function computeSupplierRisk(
   financial = Math.min(100, financial);
 
   // ── Compliance & Documentation ────────────────────────────────────────
+  const requiredDocTypes = requirementsFor(supplier.country).requiredDocs;
   const docRationale: string[] = [];
   let docs = 0;
   const byType = new Map(documents.map(d => [d.type, d]));
-  const missing = REQUIRED_DOC_TYPES.filter(t => !byType.has(t));
-  if (missing.length > 0) { docs += missing.length * 20; docRationale.push(`Missing required document(s): ${missing.join(", ")}.`); }
+  const missing = requiredDocTypes.filter(t => !byType.has(t));
+  if (missing.length > 0) { docs += missing.length * 20; docRationale.push(`Missing required document(s) for ${supplier.country ?? "this supplier's country"}: ${missing.join(", ")}.`); }
   const rejected = documents.filter(d => d.status === "REJECTED");
   if (rejected.length > 0) { docs += rejected.length * 15; docRationale.push(`${rejected.length} document(s) rejected.`); }
   const expired = documents.filter(d => d.status === "EXPIRED" || (d.expiryDate && d.expiryDate < new Date()));
@@ -104,16 +103,37 @@ export function computeSupplierRisk(
   operational = Math.min(100, operational);
 
   const domains: RiskDomain[] = [
-    { domain: "Financial", score: financial, weight: 0.3, rationale: financialRationale },
-    { domain: "Compliance & Documentation", score: docs, weight: 0.3, rationale: docRationale },
-    { domain: "Geographic & Sanctions Exposure", score: geo, weight: 0.2, rationale: geoRationale },
-    { domain: "Operational Track Record", score: operational, weight: 0.2, rationale: opRationale },
+    { domain: "Financial", score: financial, weight: 0.25, rationale: financialRationale },
+    { domain: "Compliance & Documentation", score: docs, weight: 0.25, rationale: docRationale },
+    { domain: "Geographic & Sanctions Exposure", score: geo, weight: 0.15, rationale: geoRationale },
+    { domain: "Operational Track Record", score: operational, weight: 0.15, rationale: opRationale },
   ];
 
-  const riskScore = Math.round(domains.reduce((sum, d) => sum + d.score * d.weight, 0));
+  // ── Self-Declared Risk Factors (insurance, BCP, anti-bribery policy, legal disputes) ──
+  // Real signal, but self-attested by the supplier during onboarding rather than
+  // independently verified — scored once they've answered the risk questionnaire,
+  // otherwise listed as unscored rather than assumed clean.
+  const unscored = [...ALWAYS_UNSCORED_DOMAINS];
+  const decl = profile?.riskDeclarations as Record<string, boolean> | null;
+  if (decl && typeof decl === "object") {
+    const declRationale: string[] = [];
+    let selfDeclared = 0;
+    if (decl.hasInsurance === false) { selfDeclared += 25; declRationale.push("Supplier declared no business/liability insurance."); }
+    if (decl.hasBCP === false) { selfDeclared += 15; declRationale.push("Supplier declared no business continuity / disaster recovery plan."); }
+    if (decl.hasAntiBriberyPolicy === false) { selfDeclared += 15; declRationale.push("Supplier declared no formal anti-bribery / anti-corruption policy."); }
+    if (decl.hasLegalDisputes === true) { selfDeclared += 35; declRationale.push("Supplier declared pending legal disputes or regulatory action."); }
+    if (declRationale.length === 0) declRationale.push("Supplier declared insurance coverage, a business continuity plan, an anti-bribery policy, and no pending legal disputes.");
+    declRationale.push("Self-attested by the supplier during onboarding, not independently verified.");
+    domains.push({ domain: "Self-Declared Risk Factors", score: Math.min(100, selfDeclared), weight: 0.2, rationale: declRationale });
+  } else {
+    unscored.unshift({ domain: "Self-Declared Risk Factors (insurance, BCP, anti-bribery, legal disputes)", reason: "supplier hasn't completed the onboarding risk questionnaire yet" });
+  }
 
-  const verifiedRequired = REQUIRED_DOC_TYPES.filter(t => byType.get(t)?.status === "VERIFIED").length;
-  let complianceScore = Math.round((verifiedRequired / REQUIRED_DOC_TYPES.length) * 100);
+  const totalWeight = domains.reduce((sum, d) => sum + d.weight, 0);
+  const riskScore = Math.round(domains.reduce((sum, d) => sum + d.score * d.weight, 0) / totalWeight);
+
+  const verifiedRequired = requiredDocTypes.filter(t => byType.get(t)?.status === "VERIFIED").length;
+  let complianceScore = requiredDocTypes.length > 0 ? Math.round((verifiedRequired / requiredDocTypes.length) * 100) : 100;
   complianceScore -= rejected.length * 10 + expired.length * 15;
   complianceScore = Math.max(0, Math.min(100, complianceScore));
 
@@ -123,7 +143,7 @@ export function computeSupplierRisk(
     riskLevel: levelFor(riskScore),
     complianceScore,
     domains,
-    unscored: UNSCORED_DOMAINS,
+    unscored,
   };
 }
 

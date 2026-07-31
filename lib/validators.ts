@@ -130,12 +130,21 @@ export function validateVAT(value: string): ValidationResult {
   return ok;
 }
 
-export type TaxIdType = "PAN" | "GST" | "CIN" | "EIN" | "IBAN" | "SWIFT" | "ABN" | "UEN" | "VAT" | "IFSC" | "ROUTING";
+// Australian BSB (Bank-State-Branch) — format only. Unlike the ABN, there is no
+// public checksum algorithm for BSB codes (validity is only knowable against APCA's
+// registry), so this just confirms the shape, not that the code exists.
+export function validateBSB(value: string): ValidationResult {
+  const v = value.trim().replace(/-/g, "");
+  if (!/^\d{6}$/.test(v)) return fail("BSB must be 6 digits (e.g. 062-000).");
+  return ok;
+}
+
+export type TaxIdType = "PAN" | "GST" | "CIN" | "EIN" | "IBAN" | "SWIFT" | "ABN" | "UEN" | "VAT" | "IFSC" | "ROUTING" | "BSB";
 
 const VALIDATORS: Record<TaxIdType, (v: string) => ValidationResult> = {
   PAN: validatePAN, GST: validateGST, CIN: validateCIN, EIN: validateEIN,
   IBAN: validateIBAN, SWIFT: validateSWIFT, ABN: validateABN, UEN: validateUEN,
-  VAT: validateVAT, IFSC: validateIFSC, ROUTING: validateRoutingNumber,
+  VAT: validateVAT, IFSC: validateIFSC, ROUTING: validateRoutingNumber, BSB: validateBSB,
 };
 
 export function validateTaxOrBankField(type: TaxIdType, value: string): ValidationResult {

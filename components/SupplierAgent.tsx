@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Building2, X, Send, Loader2, CheckCircle2,
-  AlertCircle, ChevronRight,
+  AlertCircle, ChevronRight, Upload,
 } from "lucide-react";
+import { requirementsFor, SUPPORTED_COUNTRIES, DOC_TYPE_LABELS } from "@/lib/onboarding-requirements";
+import type { RiskBreakdown as RiskBreakdownT } from "@/lib/supplier-risk";
 
 type Msg = {
   role: "agent" | "user" | "success" | "error" | "loading";
@@ -14,39 +16,53 @@ type Msg = {
 
 type Step =
   | "MENU"
-  | "ADD_NAME" | "ADD_CATEGORY" | "ADD_CONTACT" | "ADD_EMAIL"
+  | "ADD_NAME" | "ADD_CATEGORY" | "ADD_COUNTRY" | "ADD_CONTACT" | "ADD_EMAIL"
   | "ADD_PHONE" | "ADD_CITY" | "ADD_JUSTIFICATION" | "ADD_CONFIRM"
-  | "PROFILE_LEGAL" | "PROFILE_TYPE" | "PROFILE_PAN" | "PROFILE_GST" | "PROFILE_MSME"
-  | "BANK_BENEFICIARY" | "BANK_NAME" | "BANK_ACCOUNT" | "BANK_IFSC" | "BANK_TYPE"
+  | "PROFILE_LEGAL" | "PROFILE_TYPE" | "PROFILE_TAX" | "PROFILE_MSME"
+  | "BANK_BENEFICIARY" | "BANK_FIELDS" | "BANK_TYPE"
   | "COMPLIANCE" | "QUESTIONNAIRE"
-  | "DOCS_SEARCH" | "DOCS_TYPE"
+  | "DOCS_SEARCH" | "DOCS_TYPE" | "DOCS_ATTACH"
+  | "RISK_DECLARATION"
   | "SEARCH" | "ADVANCE" | "RISK_LOOKUP";
 
 type QuestField = { fieldKey: string; name: string; fieldType: string; options: string[]; required: boolean; helpText?: string | null };
 
 type Data = {
-  name?: string; category?: string; contactName?: string; contactEmail?: string;
+  name?: string; category?: string; country?: string; contactName?: string; contactEmail?: string;
   contactPhone?: string; city?: string; businessJustification?: string;
-  legalName?: string; businessType?: string; panNumber?: string;
-  gstNumber?: string; msmeNumber?: string; beneficiaryName?: string;
-  bankName?: string; accountNumber?: string; ifscCode?: string; accountType?: string;
+  legalName?: string; businessType?: string;
+  panNumber?: string; gstNumber?: string; taxIdValue?: string; msmeNumber?: string;
+  beneficiaryName?: string; bankName?: string; accountNumber?: string;
+  ifscCode?: string; routingNumber?: string; bsb?: string; iban?: string; swiftCode?: string;
+  accountType?: string;
   womenOwned?: boolean; minorityOwned?: boolean; smallBusiness?: boolean;
   supplierId?: string; supplierName?: string; docSupplierId?: string; docSupplierName?: string;
   questFields?: QuestField[]; questIdx?: number; questAnswers?: Record<string, string>;
+  taxIdx?: number; bankIdx?: number;
+  docChecklist?: string[]; pendingDocType?: string;
+  riskDeclIdx?: number; riskDeclarations?: Record<string, boolean>;
 };
 
 const FALLBACK_CATS = [
   "IT Hardware","Software & Licenses","Cloud Services","Consulting Services",
   "Office Supplies","Facilities","Logistics","Marketing","Professional Services","Other",
 ];
-const BIZ_TYPES = ["Private Limited","LLP","Partnership","Proprietorship","Public Limited"];
-const DOC_TYPES: Record<string, string> = {
-  PAN_CARD:"PAN Card", GST_CERTIFICATE:"GST Certificate",
-  INCORPORATION_CERTIFICATE:"Certificate of Incorporation",
-  MSME_CERTIFICATE:"MSME Certificate", CANCELLED_CHEQUE:"Cancelled Cheque",
-  BANK_STATEMENT:"Bank Statement", ISO_CERTIFICATE:"ISO Certificate",
-  NDA:"NDA", MSA:"MSA", OTHER:"Other",
+const BIZ_TYPES_DEFAULT = ["Private Limited","LLP","Partnership","Proprietorship","Public Limited"];
+const BIZ_TYPES_BY_COUNTRY: Record<string, string[]> = {
+  "United States": ["LLC","C-Corporation","S-Corporation","Partnership","Sole Proprietorship"],
+  "United Kingdom": ["Private Limited Company","Public Limited Company","LLP","Partnership","Sole Trader"],
 };
+function bizTypesFor(country?: string) { return (country && BIZ_TYPES_BY_COUNTRY[country]) || BIZ_TYPES_DEFAULT; }
+
+const AD_HOC_DOC_OPTIONS = Object.entries(DOC_TYPE_LABELS).map(([, label]) => `📄 ${label}`);
+
+const RISK_DECL_QUESTIONS: { key: string; text: string }[] = [
+  { key: "hasInsurance", text: "Does this supplier carry business/liability insurance?" },
+  { key: "hasBCP", text: "Does this supplier have a documented business continuity / disaster recovery plan?" },
+  { key: "hasAntiBriberyPolicy", text: "Does this supplier have a formal anti-bribery / anti-corruption policy?" },
+  { key: "hasLegalDisputes", text: "Is this supplier currently involved in any pending legal disputes or regulatory action?" },
+];
+
 const STAGE_LABELS: Record<string, string> = {
   REGISTRATION:"Registration", VALIDATION:"Validation",
   RISK_ASSESSMENT:"Risk Assessment", COMPLIANCE_REVIEW:"Compliance Review",
@@ -55,11 +71,11 @@ const STAGE_LABELS: Record<string, string> = {
 const STAGE_ORDER = ["REGISTRATION","VALIDATION","RISK_ASSESSMENT","COMPLIANCE_REVIEW","PROCUREMENT_APPROVAL","ACTIVE"];
 
 const PROGRESS: Partial<Record<Step, number>> = {
-  MENU:0, ADD_NAME:8, ADD_CATEGORY:15, ADD_CONTACT:20, ADD_EMAIL:25,
-  ADD_PHONE:28, ADD_CITY:32, ADD_JUSTIFICATION:36, ADD_CONFIRM:40,
-  PROFILE_LEGAL:50, PROFILE_TYPE:54, PROFILE_PAN:58, PROFILE_GST:62, PROFILE_MSME:66,
-  BANK_BENEFICIARY:72, BANK_NAME:76, BANK_ACCOUNT:80, BANK_IFSC:84, BANK_TYPE:88,
-  COMPLIANCE:93, DOCS_SEARCH:96, DOCS_TYPE:98,
+  MENU:0, ADD_NAME:6, ADD_CATEGORY:11, ADD_COUNTRY:15, ADD_CONTACT:19, ADD_EMAIL:23,
+  ADD_PHONE:26, ADD_CITY:29, ADD_JUSTIFICATION:32, ADD_CONFIRM:35,
+  PROFILE_LEGAL:42, PROFILE_TYPE:46, PROFILE_TAX:52, PROFILE_MSME:56,
+  BANK_BENEFICIARY:62, BANK_FIELDS:68, BANK_TYPE:74,
+  COMPLIANCE:80, DOCS_SEARCH:84, DOCS_TYPE:86, DOCS_ATTACH:90, RISK_DECLARATION:96,
 };
 
 function bold(text: string) {
@@ -71,6 +87,11 @@ function bold(text: string) {
       </p>
     );
   });
+}
+
+function renderRiskText(name: string, b: RiskBreakdownT): string {
+  const lines = b.domains.map(dm => `**${dm.domain}** — ${dm.score}/100\n${dm.rationale.map(r => `  • ${r}`).join("\n")}`).join("\n\n");
+  return `📊 **Risk Assessment — ${name}**\n\nRisk Score **${b.riskScore}/100** (${b.riskLevel}) · Compliance **${b.complianceScore}%**\n\n${lines}\n\n_Not yet assessed (needs a connected data source): ${b.unscored.map(u => u.domain).join(", ")}._`;
 }
 
 const MENU_MSG: Msg = {
@@ -201,8 +222,22 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
           const cat = isNaN(num) ? cats.find(c => c.toLowerCase().includes(text.toLowerCase())) : cats[num - 1];
           if (!cat) { push({ role: "agent", text: "Pick 1–10 or type the category name.", options: cats.map((c, i) => `${i + 1}. ${c}`) }); break; }
           setData(d => ({ ...d, category: cat }));
+          setStep("ADD_COUNTRY");
+          push({
+            role: "agent",
+            text: `**${cat}** ✓\n\nWhich **country** is this supplier based in? This determines which tax ID, banking details, and documents are required.`,
+            options: SUPPORTED_COUNTRIES.map((c, i) => `${i + 1}. ${c}`),
+          });
+          break;
+        }
+
+        case "ADD_COUNTRY": {
+          const num = parseInt(text);
+          const country = !isNaN(num) ? SUPPORTED_COUNTRIES[num - 1] : SUPPORTED_COUNTRIES.find(c => c.toLowerCase().includes(text.toLowerCase()));
+          if (!country) { push({ role: "agent", text: "Please pick a country from the list.", options: SUPPORTED_COUNTRIES.map((c, i) => `${i + 1}. ${c}`) }); break; }
+          setData(d => ({ ...d, country }));
           setStep("ADD_CONTACT");
-          push({ role: "agent", text: `**${cat}** ✓\n\nWhat is the **contact person's name**? (type 'skip' to skip)` });
+          push({ role: "agent", text: `**${country}** ✓\n\nWhat is the **contact person's name**? (type 'skip' to skip)` });
           break;
         }
 
@@ -241,7 +276,7 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
           setStep("ADD_CONFIRM");
           push({
             role: "agent",
-            text: `📋 **Summary — please confirm:**\n\n🏢 **Company:** ${d2.name}\n📦 **Category:** ${d2.category}\n👤 **Contact:** ${d2.contactName || "—"}\n📧 **Email:** ${d2.contactEmail || "—"}\n📞 **Phone:** ${d2.contactPhone || "—"}\n🏙️ **City:** ${d2.city || "—"}\n\nShall I create this supplier?`,
+            text: `📋 **Summary — please confirm:**\n\n🏢 **Company:** ${d2.name}\n📦 **Category:** ${d2.category}\n🌍 **Country:** ${d2.country}\n👤 **Contact:** ${d2.contactName || "—"}\n📧 **Email:** ${d2.contactEmail || "—"}\n📞 **Phone:** ${d2.contactPhone || "—"}\n🏙️ **City:** ${d2.city || "—"}\n\nShall I create this supplier?`,
             options: ["✅ Yes, create supplier", "❌ Cancel"],
           });
           break;
@@ -262,31 +297,45 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
         case "PROFILE_LEGAL": {
           setData(d => ({ ...d, legalName: skip ? d.name : text }));
           setStep("PROFILE_TYPE");
-          push({ role: "agent", text: "What is the **business / entity type**?", options: BIZ_TYPES.map((t, i) => `${i + 1}. ${t}`) });
+          const bt = bizTypesFor(data.country);
+          push({ role: "agent", text: "What is the **business / entity type**?", options: bt.map((t, i) => `${i + 1}. ${t}`) });
           break;
         }
 
         case "PROFILE_TYPE": {
+          const bt = bizTypesFor(data.country);
           const num = parseInt(text);
-          const bt = isNaN(num) ? BIZ_TYPES.find(b => b.toLowerCase().includes(text.toLowerCase())) : BIZ_TYPES[num - 1];
-          if (!bt) { push({ role: "agent", text: "Pick 1–5.", options: BIZ_TYPES.map((t, i) => `${i + 1}. ${t}`) }); break; }
-          setData(d => ({ ...d, businessType: bt.toUpperCase().replace(/\s+/g, "_") }));
-          setStep("PROFILE_PAN");
-          push({ role: "agent", text: `**${bt}** ✓\n\n**PAN number?** (type 'skip' if not available)` });
+          const chosen = isNaN(num) ? bt.find(b => b.toLowerCase().includes(text.toLowerCase())) : bt[num - 1];
+          if (!chosen) { push({ role: "agent", text: `Pick 1–${bt.length}.`, options: bt.map((t, i) => `${i + 1}. ${t}`) }); break; }
+          setData(d => ({ ...d, businessType: chosen.toUpperCase().replace(/\s+/g, "_") }));
+          setStep("PROFILE_TAX");
+          setData(d => ({ ...d, taxIdx: 0 }));
+          const taxFields = requirementsFor(data.country).taxFields;
+          const f0 = taxFields[0];
+          push({ role: "agent", text: `**${chosen}** ✓\n\n**${f0.label}?**${f0.placeholder ? ` (e.g. ${f0.placeholder})` : ""}${f0.helpText ? `\n${f0.helpText}` : ""} (type 'skip' if not available)` });
           break;
         }
 
-        case "PROFILE_PAN": {
-          setData(d => ({ ...d, panNumber: skip ? undefined : text.toUpperCase() }));
-          setStep("PROFILE_GST");
-          push({ role: "agent", text: "**GST registration number?** (type 'skip' if not applicable)" });
-          break;
-        }
-
-        case "PROFILE_GST": {
-          setData(d => ({ ...d, gstNumber: skip ? undefined : text.toUpperCase() }));
-          setStep("PROFILE_MSME");
-          push({ role: "agent", text: "**MSME registration number?** (type 'skip' if not applicable)" });
+        case "PROFILE_TAX": {
+          const taxFields = requirementsFor(data.country).taxFields;
+          const idx = data.taxIdx ?? 0;
+          const f = taxFields[idx];
+          if (!f) { setStep("BANK_BENEFICIARY"); break; }
+          setData(d => ({ ...d, [f.key]: skip ? undefined : text.toUpperCase() }));
+          const nextIdx = idx + 1;
+          if (nextIdx >= taxFields.length) {
+            if (data.country === "India") {
+              setStep("PROFILE_MSME");
+              push({ role: "agent", text: "**MSME registration number?** (type 'skip' if not applicable)" });
+            } else {
+              setStep("BANK_BENEFICIARY");
+              push({ role: "agent", text: "✅ Tax details saved!\n\n**Step 3 of 4 — Banking Details**\n\n**Beneficiary name** (name on the bank account)?" });
+            }
+          } else {
+            setData(d => ({ ...d, taxIdx: nextIdx }));
+            const nf = taxFields[nextIdx];
+            push({ role: "agent", text: `**${nf.label}?**${nf.placeholder ? ` (e.g. ${nf.placeholder})` : ""}${nf.helpText ? `\n${nf.helpText}` : ""} (type 'skip' if not available)` });
+          }
           break;
         }
 
@@ -300,29 +349,29 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
         // ── BANKING ───────────────────────────────────────────────────────────
         case "BANK_BENEFICIARY": {
           setData(d => ({ ...d, beneficiaryName: skip ? d.legalName || d.name : text }));
-          setStep("BANK_NAME");
-          push({ role: "agent", text: "**Bank name?** (e.g. HDFC Bank, SBI)" });
+          setStep("BANK_FIELDS");
+          setData(d => ({ ...d, bankIdx: 0 }));
+          const bankFields = requirementsFor(data.country).bankFields;
+          const f0 = bankFields[0];
+          push({ role: "agent", text: `**${f0.label}?**${f0.placeholder ? ` (e.g. ${f0.placeholder})` : ""}` });
           break;
         }
 
-        case "BANK_NAME": {
-          setData(d => ({ ...d, bankName: skip ? undefined : text }));
-          setStep("BANK_ACCOUNT");
-          push({ role: "agent", text: "**Account number?**" });
-          break;
-        }
-
-        case "BANK_ACCOUNT": {
-          setData(d => ({ ...d, accountNumber: skip ? undefined : text }));
-          setStep("BANK_IFSC");
-          push({ role: "agent", text: "**IFSC code?** (e.g. HDFC0001234, type 'skip' to skip)" });
-          break;
-        }
-
-        case "BANK_IFSC": {
-          setData(d => ({ ...d, ifscCode: skip ? undefined : text.toUpperCase() }));
-          setStep("BANK_TYPE");
-          push({ role: "agent", text: "**Account type?**", options: ["Savings", "Current"] });
+        case "BANK_FIELDS": {
+          const bankFields = requirementsFor(data.country).bankFields;
+          const idx = data.bankIdx ?? 0;
+          const f = bankFields[idx];
+          if (!f) { setStep("BANK_TYPE"); break; }
+          setData(d => ({ ...d, [f.key]: skip ? undefined : (f.key === "bankName" ? text : text.toUpperCase()) }));
+          const nextIdx = idx + 1;
+          if (nextIdx >= bankFields.length) {
+            setStep("BANK_TYPE");
+            push({ role: "agent", text: "**Account type?**", options: ["Savings", "Current"] });
+          } else {
+            setData(d => ({ ...d, bankIdx: nextIdx }));
+            const nf = bankFields[nextIdx];
+            push({ role: "agent", text: `**${nf.label}?**${nf.placeholder ? ` (e.g. ${nf.placeholder})` : ""} (type 'skip' to skip)` });
+          }
           break;
         }
 
@@ -356,9 +405,15 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
           break;
         }
 
-        // ── RISK EXPLAIN ──────────────────────────────────────────────────────
+        // ── RISK EXPLAIN (menu) ──────────────────────────────────────────────
         case "RISK_LOOKUP": {
           await doExplainRisk(text);
+          break;
+        }
+
+        // ── RISK DECLARATION (onboarding) ────────────────────────────────────
+        case "RISK_DECLARATION": {
+          await doRiskDeclarationAnswer(text);
           break;
         }
 
@@ -369,10 +424,25 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
         }
 
         case "DOCS_TYPE": {
-          const docTypeKey = Object.entries(DOC_TYPES).find(([, v]) => v.toLowerCase() === text.toLowerCase())?.[0]
-            ?? Object.entries(DOC_TYPES).find(([, v]) => v.toLowerCase().includes(text.toLowerCase().replace(/^\d+\.\s*📄?\s*/, "")))?.[0]
+          const t = text.toLowerCase();
+          if (t.includes("add another")) { askDocType(); break; }
+          if (t.includes("done")) { push({ role: "agent", text: "All done for now." }); goMenu(); break; }
+          const docTypeKey = Object.entries(DOC_TYPE_LABELS).find(([, v]) => v.toLowerCase() === t)?.[0]
+            ?? Object.entries(DOC_TYPE_LABELS).find(([, v]) => v.toLowerCase().includes(t.replace(/^\d+\.\s*📄?\s*/, "")))?.[0]
             ?? "OTHER";
-          await doAddDoc(docTypeKey);
+          setData(d => ({ ...d, pendingDocType: docTypeKey }));
+          setStep("DOCS_ATTACH");
+          push({ role: "agent", text: `Please attach the **${DOC_TYPE_LABELS[docTypeKey] ?? docTypeKey}**. Accepted: PDF, JPG, PNG (max 10MB).`, options: ["⏭️ Skip this document"] });
+          break;
+        }
+
+        case "DOCS_ATTACH": {
+          if (text.toLowerCase().includes("skip")) {
+            push({ role: "agent", text: `Skipped — you can attach the **${DOC_TYPE_LABELS[data.pendingDocType ?? ""] ?? data.pendingDocType}** later from the supplier detail page.` });
+            advanceDocChecklist();
+          } else {
+            push({ role: "agent", text: "Please attach a file using the picker below, or type **skip**.", options: ["⏭️ Skip this document"] });
+          }
           break;
         }
 
@@ -395,7 +465,7 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
 
   // ── Option button click ────────────────────────────────────────────────────
   function handleOption(opt: string) {
-    const clean = opt.replace(/^[\d]+\.\s*/, "").replace(/^[🏢📋🔍📄⬆️✅❌]\s*/u, "").trim();
+    const clean = opt.replace(/^[\d]+\.\s*/, "").replace(/^[🏢📋🔍📄⬆️✅❌⏭️]\s*/u, "").trim();
 
     if (opt.includes("Cancel") || opt.includes("❌")) {
       push({ role: "user", text: opt });
@@ -418,86 +488,36 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
       return;
     }
 
-    if (opt.includes("required documents") || opt.includes("Add documents")) {
-      push({ role: "user", text: opt });
-      if (data.supplierId) {
-        setStep("DOCS_TYPE");
-        push({
-          role: "agent",
-          text: "Which **document type** would you like to add?",
-          options: ["📄 PAN Card", "📄 GST Certificate", "📄 Certificate of Incorporation", "📄 Cancelled Cheque", "📄 Bank Statement", "📄 ISO Certificate"],
-        });
-      } else {
-        setStep("DOCS_SEARCH");
-        push({ role: "agent", text: "Enter the supplier code or name:" });
-      }
-      return;
-    }
-
-    if (opt.includes("Another document") || opt.includes("another doc")) {
-      push({ role: "user", text: opt });
-      if (data.docSupplierId) {
-        setStep("DOCS_TYPE");
-        push({
-          role: "agent",
-          text: "Which **document type** would you like to add?",
-          options: ["📄 PAN Card", "📄 GST Certificate", "📄 Certificate of Incorporation", "📄 Cancelled Cheque", "📄 Bank Statement", "📄 Other"],
-        });
-      } else {
-        setStep("DOCS_SEARCH");
-        push({ role: "agent", text: "Enter supplier code or name:" });
-      }
-      return;
-    }
-
-    // Doc type selection
-    if (step === "DOCS_TYPE" && (opt.includes("📄") || opt.startsWith("PAN") || opt.startsWith("GST"))) {
-      push({ role: "user", text: opt });
-      handleSend(clean);
-      return;
-    }
-
     // Bank type
-    if (step === "BANK_TYPE") {
-      push({ role: "user", text: opt });
-      handleSend(clean);
-      return;
-    }
+    if (step === "BANK_TYPE") { push({ role: "user", text: opt }); handleSend(clean); return; }
 
     // Business type
-    if (step === "PROFILE_TYPE") {
-      push({ role: "user", text: opt });
-      handleSend(clean);
-      return;
-    }
+    if (step === "PROFILE_TYPE") { push({ role: "user", text: opt }); handleSend(clean); return; }
 
     // Category
-    if (step === "ADD_CATEGORY") {
-      push({ role: "user", text: opt });
-      handleSend(clean);
-      return;
-    }
+    if (step === "ADD_CATEGORY") { push({ role: "user", text: opt }); handleSend(clean); return; }
+
+    // Country
+    if (step === "ADD_COUNTRY") { push({ role: "user", text: opt }); handleSend(clean); return; }
 
     // Compliance
-    if (step === "COMPLIANCE") {
-      push({ role: "user", text: opt });
-      handleSend(clean);
-      return;
-    }
+    if (step === "COMPLIANCE") { push({ role: "user", text: opt }); handleSend(clean); return; }
+
+    // Dynamic questionnaire dropdown options
+    if (step === "QUESTIONNAIRE") { push({ role: "user", text: opt }); handleSend(clean); return; }
+
+    // Doc type selection (both onboarding-driven and ad-hoc)
+    if (step === "DOCS_TYPE") { push({ role: "user", text: opt }); handleSend(clean); return; }
+
+    // Skip document / risk declaration Yes-No / anything else with a step-specific handler
+    if (step === "DOCS_ATTACH") { push({ role: "user", text: opt }); handleSend(clean); return; }
+    if (step === "RISK_DECLARATION") { push({ role: "user", text: opt }); handleSend(clean); return; }
 
     // Menu options
-    if (step === "MENU") {
-      push({ role: "user", text: opt });
-      handleSend(opt);
-      return;
-    }
+    if (step === "MENU") { push({ role: "user", text: opt }); handleSend(opt); return; }
 
     // Confirm
-    if (step === "ADD_CONFIRM") {
-      push({ role: "user", text: opt });
-      handleSend(opt);
-      return;
-    }
+    if (step === "ADD_CONFIRM") { push({ role: "user", text: opt }); handleSend(opt); return; }
 
     // Fallback
     push({ role: "user", text: opt });
@@ -546,7 +566,7 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
     push({ role: "loading", text: "Creating supplier…" });
     const { ok, data: d } = await api<{ supplier: { id: string; code: string }; error?: string }>("/api/suppliers", "POST", {
       name: data.name, contactName: data.contactName, contactEmail: data.contactEmail,
-      contactPhone: data.contactPhone, category: data.category, city: data.city,
+      contactPhone: data.contactPhone, category: data.category, city: data.city, country: data.country,
       businessJustification: data.businessJustification,
     });
     setMessages(p => p.filter(m => m.role !== "loading"));
@@ -573,27 +593,38 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
     if (!data.supplierId) { goMenu(); return; }
     push({ role: "loading", text: "Saving onboarding profile…" });
 
+    const req = requirementsFor(data.country);
+    const payload: Record<string, unknown> = {
+      country: data.country, legalName: data.legalName, businessType: data.businessType,
+      beneficiaryName: data.beneficiaryName, bankName: data.bankName, accountType: data.accountType,
+      womenOwned: data.womenOwned ?? false, minorityOwned: data.minorityOwned ?? false,
+      smallBusiness: data.smallBusiness ?? false,
+    };
+    if (data.country === "India") payload.msmeNumber = data.msmeNumber;
+    for (const f of [...req.taxFields, ...req.bankFields]) payload[f.key] = (data as Record<string, unknown>)[f.key];
+
     const { ok, data: d } = await api<{ completionScore?: number; error?: string }>(
-      `/api/suppliers/${data.supplierId}/onboarding`,
-      "POST",
-      {
-        legalName: data.legalName, businessType: data.businessType,
-        panNumber: data.panNumber, gstNumber: data.gstNumber, msmeNumber: data.msmeNumber,
-        beneficiaryName: data.beneficiaryName, bankName: data.bankName,
-        accountNumber: data.accountNumber, ifscCode: data.ifscCode, accountType: data.accountType,
-        womenOwned: data.womenOwned ?? false, minorityOwned: data.minorityOwned ?? false,
-        smallBusiness: data.smallBusiness ?? false,
-      }
+      `/api/suppliers/${data.supplierId}/onboarding`, "POST", payload
     );
     setMessages(p => p.filter(m => m.role !== "loading"));
 
     if (!ok) {
       const err = (d as { error?: string }).error || "Failed to save profile. Please try again.";
       push({ role: "error", text: err });
-      if (err.includes("panNumber")) { setStep("PROFILE_PAN"); push({ role: "agent", text: "Please re-enter a valid **PAN number** (e.g. ABCDE1234F)." }); }
-      else if (err.includes("gstNumber")) { setStep("PROFILE_GST"); push({ role: "agent", text: "Please re-enter a valid **GST number**." }); }
-      else if (err.includes("ifscCode")) { setStep("BANK_IFSC"); push({ role: "agent", text: "Please re-enter a valid **IFSC code** (e.g. HDFC0001234)." }); }
-      else { setStep("PROFILE_LEGAL"); push({ role: "agent", text: "Let's redo the business profile — what is the **legal / registered company name**?" }); }
+      const badTaxField = req.taxFields.find(f => err.includes(f.key));
+      const badBankField = req.bankFields.find(f => err.includes(f.key));
+      if (badTaxField) {
+        setStep("PROFILE_TAX");
+        setData(d2 => ({ ...d2, taxIdx: req.taxFields.indexOf(badTaxField) }));
+        push({ role: "agent", text: `Please re-enter a valid **${badTaxField.label}**${badTaxField.placeholder ? ` (e.g. ${badTaxField.placeholder})` : ""}.` });
+      } else if (badBankField) {
+        setStep("BANK_FIELDS");
+        setData(d2 => ({ ...d2, bankIdx: req.bankFields.indexOf(badBankField) }));
+        push({ role: "agent", text: `Please re-enter a valid **${badBankField.label}**${badBankField.placeholder ? ` (e.g. ${badBankField.placeholder})` : ""}.` });
+      } else {
+        setStep("PROFILE_LEGAL");
+        push({ role: "agent", text: "Let's redo the business profile — what is the **legal / registered company name**?" });
+      }
       return;
     }
 
@@ -613,20 +644,14 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
       return;
     }
 
-    push({
-      role: "agent",
-      text: `Now let's add the required compliance documents:\n• PAN Card\n• GST Certificate\n• Certificate of Incorporation\n• Cancelled Cheque`,
-      options: ["📄 Add required documents", "✅ Done for now"],
-    });
-    setStep("DOCS_TYPE");
-    setData(d2 => ({ ...d2, docSupplierId: d2.supplierId, docSupplierName: d2.supplierName }));
+    startDocChecklist();
   }
 
   async function doQuestionnaireAnswer(text: string, skip: boolean) {
     const fields = data.questFields ?? [];
     const idx = data.questIdx ?? 0;
     const f = fields[idx];
-    if (!f) { setStep("DOCS_TYPE"); return; }
+    if (!f) { startDocChecklist(); return; }
     if (f.required && !text.trim()) {
       push({ role: "agent", text: `**${f.name}** is required.`, options: f.fieldType === "DROPDOWN" ? f.options : undefined });
       return;
@@ -639,18 +664,122 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
       setMessages(p => p.filter(m => m.role !== "loading"));
       push({ role: ok ? "success" : "error", text: ok ? "✅ Saved additional details." : "Some answers didn't save — you can update them later from the supplier detail page." });
       setData(d2 => ({ ...d2, questAnswers: answers }));
-      push({
-        role: "agent",
-        text: `Now let's add the required compliance documents:\n• PAN Card\n• GST Certificate\n• Certificate of Incorporation\n• Cancelled Cheque`,
-        options: ["📄 Add required documents", "✅ Done for now"],
-      });
-      setStep("DOCS_TYPE");
-      setData(d2 => ({ ...d2, docSupplierId: d2.supplierId, docSupplierName: d2.supplierName }));
+      startDocChecklist();
     } else {
       setData(d2 => ({ ...d2, questAnswers: answers, questIdx: nextIdx }));
       const nf = fields[nextIdx];
       push({ role: "agent", text: `**${nf.name}**${nf.helpText ? `\n${nf.helpText}` : ""}${nf.required ? "" : " (type 'skip' to skip)"}`, options: nf.fieldType === "DROPDOWN" ? nf.options : undefined });
     }
+  }
+
+  // ── Document checklist (onboarding) ─────────────────────────────────────────
+
+  function startDocChecklist() {
+    const sid = data.supplierId;
+    const req = requirementsFor(data.country);
+    setData(d => ({ ...d, docSupplierId: sid, docSupplierName: d.supplierName, docChecklist: req.requiredDocs.slice() }));
+    push({
+      role: "agent",
+      text: `Now let's collect the documents required for a **${data.country}** supplier:\n${req.requiredDocs.map(t => `• ${DOC_TYPE_LABELS[t] ?? t}`).join("\n")}`,
+    });
+    advanceDocChecklistFrom(req.requiredDocs.slice());
+  }
+
+  function advanceDocChecklistFrom(remaining: string[] | undefined) {
+    if (remaining === undefined) {
+      push({ role: "agent", text: "Add another document or type **done**.", options: ["📄 Add another document", "✅ Done"] });
+      setStep("DOCS_TYPE");
+      return;
+    }
+    if (remaining.length === 0) {
+      push({ role: "agent", text: "✅ All required documents collected.\n\n**Risk Assessment** — a few quick questions:" });
+      setData(d => ({ ...d, riskDeclIdx: 0, riskDeclarations: {} }));
+      setStep("RISK_DECLARATION");
+      push({ role: "agent", text: `**${RISK_DECL_QUESTIONS[0].text}**`, options: ["Yes", "No"] });
+      return;
+    }
+    const [next, ...rest] = remaining;
+    setData(d => ({ ...d, docChecklist: rest, pendingDocType: next }));
+    setStep("DOCS_ATTACH");
+    push({ role: "agent", text: `Please attach the **${DOC_TYPE_LABELS[next] ?? next}**. Accepted: PDF, JPG, PNG (max 10MB).`, options: ["⏭️ Skip this document"] });
+  }
+
+  function advanceDocChecklist() {
+    advanceDocChecklistFrom(data.docChecklist);
+  }
+
+  function askDocType() {
+    setData(d => ({ ...d, docChecklist: undefined }));
+    setStep("DOCS_TYPE");
+    push({ role: "agent", text: "Which **document type** would you like to add?", options: AD_HOC_DOC_OPTIONS });
+  }
+
+  async function doUploadDoc(file: File) {
+    const sid = data.docSupplierId || data.supplierId;
+    const docType = data.pendingDocType;
+    const sname = data.docSupplierName || data.supplierName || "this supplier";
+    if (!sid || !docType) { goMenu(); return; }
+
+    push({ role: "user", text: `📎 ${file.name}` });
+    push({ role: "loading", text: "Uploading and running automated checks…" });
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("type", docType);
+      form.append("name", `${DOC_TYPE_LABELS[docType] ?? docType} — ${sname}`);
+      const res = await fetch(`/api/suppliers/${sid}/documents/upload`, { method: "POST", body: form });
+      const d = await res.json();
+      setMessages(p => p.filter(m => m.role !== "loading"));
+
+      if (!res.ok) {
+        push({ role: "error", text: (d.error as string) || "Upload failed. Please try again or type 'skip'." });
+        return;
+      }
+
+      const notes = ((d.scan?.notes as string[]) ?? []).map(n => `  • ${n}`).join("\n");
+      push({
+        role: d.scan?.passed ? "success" : "error",
+        text: `${d.scan?.passed ? "✅" : "⚠️"} **${DOC_TYPE_LABELS[docType] ?? docType}** uploaded.\n\n**Automated checks:**\n${notes}\n\n_Format/consistency checks only — not proof the document is authentic. A human reviewer should still confirm that from the supplier detail page._`,
+      });
+      onRefresh?.();
+      advanceDocChecklist();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doRiskDeclarationAnswer(text: string) {
+    const idx = data.riskDeclIdx ?? 0;
+    const q = RISK_DECL_QUESTIONS[idx];
+    if (!q) { await finishRiskAssessment(); return; }
+    const yes = /^y(es)?$/i.test(text.trim()) || text.toLowerCase().includes("yes");
+    const no = /^n(o)?$/i.test(text.trim()) || text.toLowerCase().includes("no");
+    if (!yes && !no) { push({ role: "agent", text: "Please answer **Yes** or **No**.", options: ["Yes", "No"] }); return; }
+
+    const answers = { ...(data.riskDeclarations ?? {}), [q.key]: yes };
+    const nextIdx = idx + 1;
+    if (nextIdx >= RISK_DECL_QUESTIONS.length) {
+      setData(d => ({ ...d, riskDeclarations: answers }));
+      await finishRiskAssessment(answers);
+    } else {
+      setData(d => ({ ...d, riskDeclarations: answers, riskDeclIdx: nextIdx }));
+      push({ role: "agent", text: `**${RISK_DECL_QUESTIONS[nextIdx].text}**`, options: ["Yes", "No"] });
+    }
+  }
+
+  async function finishRiskAssessment(answers?: Record<string, boolean>) {
+    const sid = data.supplierId;
+    if (!sid) { goMenu(); return; }
+    push({ role: "loading", text: "Saving risk declaration and computing risk assessment…" });
+    const { ok, data: rd } = await api<{ breakdown: RiskBreakdownT }>(`/api/suppliers/${sid}/risk-declarations`, "POST", {
+      riskDeclarations: answers ?? data.riskDeclarations ?? {},
+    });
+    setMessages(p => p.filter(m => m.role !== "loading"));
+    onRefresh?.();
+    if (!ok || !rd.breakdown) { push({ role: "error", text: "Could not complete the risk assessment." }); goMenu(); return; }
+    push({ role: "success", text: renderRiskText(data.supplierName ?? "this supplier", rd.breakdown) });
+    goMenu();
   }
 
   async function doExplainRisk(query: string) {
@@ -662,22 +791,17 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
     const sup = sups[0];
 
     push({ role: "loading", text: `Computing risk assessment for ${sup.name}…` });
-    const { ok, data: rd } = await api<{ breakdown: import("@/lib/supplier-risk").RiskBreakdown }>(`/api/suppliers/${sup.id}/risk-assessment`, "POST");
+    const { ok, data: rd } = await api<{ breakdown: RiskBreakdownT }>(`/api/suppliers/${sup.id}/risk-assessment`, "POST");
     setMessages(p => p.filter(m => m.role !== "loading"));
     if (!ok || !rd.breakdown) { push({ role: "error", text: "Could not compute a risk assessment for this supplier." }); goMenu(); return; }
 
-    const b = rd.breakdown;
-    const lines = b.domains.map(dm => `**${dm.domain}** — ${dm.score}/100\n${dm.rationale.map(r => `  • ${r}`).join("\n")}`).join("\n\n");
-    push({
-      role: "agent",
-      text: `📊 **${sup.name}** — Risk Score **${b.riskScore}/100** (${b.riskLevel}) · Compliance **${b.complianceScore}%**\n\n${lines}\n\n_Not yet assessed (needs a connected data source): ${b.unscored.map(u => u.domain).join(", ")}._`,
-    });
+    push({ role: "agent", text: renderRiskText(sup.name, rd.breakdown) });
     goMenu();
   }
 
   async function doFindSupplierForDoc(query: string) {
     push({ role: "loading", text: "Looking up supplier…" });
-    const { data: d } = await api<{ suppliers: { id: string; name: string; code: string; documents: { type: string }[] }[] }>(`/api/suppliers?q=${encodeURIComponent(query)}`);
+    const { data: d } = await api<{ suppliers: { id: string; name: string; code: string }[] }>(`/api/suppliers?q=${encodeURIComponent(query)}`);
     setMessages(p => p.filter(m => m.role !== "loading"));
     const sups = d.suppliers ?? [];
 
@@ -687,43 +811,13 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
     }
 
     const sup = sups[0];
-    setData(d2 => ({ ...d2, docSupplierId: sup.id, docSupplierName: sup.name }));
+    setData(d2 => ({ ...d2, docSupplierId: sup.id, docSupplierName: sup.name, docChecklist: undefined }));
     setStep("DOCS_TYPE");
     push({
       role: "agent",
       text: `Adding document to **${sup.name}**.\n\nWhich **document type** would you like to add?`,
-      options: [
-        "📄 PAN Card", "📄 GST Certificate", "📄 Certificate of Incorporation",
-        "📄 Cancelled Cheque", "📄 Bank Statement", "📄 ISO Certificate", "📄 Other",
-      ],
+      options: AD_HOC_DOC_OPTIONS,
     });
-  }
-
-  async function doAddDoc(docTypeKey: string) {
-    const sid = data.docSupplierId || data.supplierId;
-    const sname = data.docSupplierName || data.supplierName;
-    if (!sid) { push({ role: "agent", text: "Supplier not found. Please try again." }); goMenu(); return; }
-
-    const docLabel = DOC_TYPES[docTypeKey] ?? docTypeKey;
-    const docName  = `${docLabel} — ${sname}`;
-
-    push({ role: "loading", text: "Adding document record…" });
-    const { ok } = await api(`/api/suppliers/${sid}/documents`, "POST", {
-      type: docTypeKey, name: docName, fileUrl: "#",
-    });
-    setMessages(p => p.filter(m => m.role !== "loading"));
-
-    if (ok) {
-      push({
-        role: "success",
-        text: `✅ **${docLabel}** added!\n\n📌 Status: **Pending verification**\n\nThe procurement team can verify this from the Supplier detail page.`,
-        options: ["📄 Add another document", "✅ Done"],
-      });
-      onRefresh?.();
-    } else {
-      push({ role: "error", text: "Failed to add document." });
-    }
-    setStep("MENU");
   }
 
   async function doAdvance(query: string) {
@@ -765,6 +859,13 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
       push({ role: "error", text: "Failed to advance stage." });
     }
     goMenu();
+  }
+
+  async function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || busy) return;
+    await doUploadDoc(file);
   }
 
   const progress = PROGRESS[step] ?? 0;
@@ -858,7 +959,7 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
                       )}
                     </div>
                     <div className="flex-1 min-w-0 space-y-2">
-                      <div className={`text-xs leading-relaxed px-4 py-3 rounded-2xl rounded-bl-sm shadow-sm ${
+                      <div className={`text-xs leading-relaxed px-4 py-3 rounded-2xl rounded-bl-sm shadow-sm whitespace-pre-wrap ${
                         msg.role === "success" ? "bg-emerald-50 border border-emerald-200 text-emerald-900"
                         : msg.role === "error"  ? "bg-red-50 border border-red-200 text-red-800"
                         : "bg-white border border-gray-100 text-gray-800"
@@ -890,41 +991,53 @@ export function SupplierAgent({ onRefresh }: { onRefresh?: () => void }) {
 
           {/* Input */}
           <div className="px-4 py-3 border-t border-gray-100 shrink-0 bg-white">
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-[#1A2A52] focus-within:ring-1 focus-within:ring-[#1A2A52]/15 transition-all">
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter" && !e.shiftKey && !busy) {
-                    e.preventDefault();
-                    handleSend();
+            {step === "DOCS_ATTACH" ? (
+              <label className="flex items-center gap-2 bg-gray-50 border border-dashed border-gray-300 rounded-xl px-3 py-2.5 cursor-pointer hover:border-[#1A2A52] transition-colors">
+                <Upload className="size-3.5 text-gray-400 shrink-0" />
+                <span className="text-xs text-gray-500 truncate flex-1">{busy ? "Uploading…" : "Click to attach a PDF, JPG, or PNG (max 10MB)"}</span>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                  className="hidden"
+                  disabled={busy}
+                  onChange={handleFileInput}
+                />
+              </label>
+            ) : (
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-[#1A2A52] focus-within:ring-1 focus-within:ring-[#1A2A52]/15 transition-all">
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && !e.shiftKey && !busy) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder={
+                    step === "ADD_EMAIL"     ? "email@company.com or skip" :
+                    step === "ADD_PHONE"     ? "+91-XXXXXXXXXX or skip" :
+                    step === "MENU"          ? "Type 1–6 or use buttons above…" :
+                    step === "RISK_DECLARATION" ? "Yes or No" :
+                    "Type your response…"
                   }
-                }}
-                placeholder={
-                  step === "ADD_EMAIL"     ? "email@company.com or skip" :
-                  step === "ADD_PHONE"     ? "+91-XXXXXXXXXX or skip" :
-                  step === "PROFILE_PAN"  ? "ABCDE1234F or skip" :
-                  step === "PROFILE_GST"  ? "27AABCN1234F1ZX or skip" :
-                  step === "BANK_IFSC"    ? "HDFC0001234 or skip" :
-                  step === "MENU"         ? "Type 1–5 or use buttons above…" :
-                  "Type your response…"
-                }
-                disabled={busy}
-                className="flex-1 text-xs bg-transparent outline-none text-gray-800 placeholder:text-gray-400 disabled:opacity-40"
-              />
-              <button
-                onClick={() => handleSend()}
-                disabled={!input.trim() || busy}
-                className="size-7 bg-[#1A2A52] rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-[#243766] transition-colors shrink-0"
-              >
-                {busy
-                  ? <Loader2 className="size-3 text-white animate-spin" />
-                  : <Send className="size-3 text-white" />
-                }
-              </button>
-            </div>
-            <p className="text-[10px] text-gray-400 mt-1 text-center">Enter to send · Buttons for quick replies</p>
+                  disabled={busy}
+                  className="flex-1 text-xs bg-transparent outline-none text-gray-800 placeholder:text-gray-400 disabled:opacity-40"
+                />
+                <button
+                  onClick={() => handleSend()}
+                  disabled={!input.trim() || busy}
+                  className="size-7 bg-[#1A2A52] rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-[#243766] transition-colors shrink-0"
+                >
+                  {busy
+                    ? <Loader2 className="size-3 text-white animate-spin" />
+                    : <Send className="size-3 text-white" />
+                  }
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] text-gray-400 mt-1 text-center">{step === "DOCS_ATTACH" ? "Or type skip to come back to this later" : "Enter to send · Buttons for quick replies"}</p>
           </div>
         </div>
       )}

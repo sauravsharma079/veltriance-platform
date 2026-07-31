@@ -199,15 +199,22 @@ model SupplierOnboardingProfile {
   id                String   @id @default(uuid())
   supplierId        String   @unique
   supplier          Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  country           String?  // drives which tax/bank fields + documents are required, see lib/onboarding-requirements.ts
   legalName         String?
   businessType      String?
-  panNumber         String?
-  gstNumber         String?
-  msmeNumber        String?
+  panNumber         String?  // India
+  gstNumber         String?  // India
+  msmeNumber        String?  // India
+  taxIdType         String?  // EIN | VAT | ABN | UEN | OTHER — generic tax ID slot for non-India countries
+  taxIdValue        String?
   beneficiaryName   String?
   bankName          String?
   accountNumber     String?
-  ifscCode          String?
+  ifscCode          String?  // India
+  routingNumber     String?  // United States (ABA)
+  bsb               String?  // Australia
+  iban              String?  // IBAN countries (UK/EU/etc)
+  swiftCode         String?
   accountType       String?
   regAddressLine1   String?
   regCity           String?
@@ -218,6 +225,7 @@ model SupplierOnboardingProfile {
   smallBusiness     Boolean  @default(false)
   completionScore   Int      @default(0)
   validation        Json?    // per-field tax/bank validation results (format/checksum), see lib/validators.ts
+  riskDeclarations  Json?    // self-declared risk questionnaire answers (insurance, BCP, anti-bribery policy, legal disputes) — see lib/supplier-risk.ts
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -230,19 +238,21 @@ enum DocumentStatus {
 }
 
 model SupplierDocument {
-  id           String         @id @default(uuid())
-  supplierId   String
-  supplier     Supplier       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  type         String         // PAN_CARD | GST_CERTIFICATE | INCORPORATION_CERTIFICATE | MSME_CERTIFICATE | CANCELLED_CHEQUE | BANK_STATEMENT | ISO_CERTIFICATE | NDA | MSA | OTHER
-  name         String
-  fileUrl      String
-  mimeType     String?
-  status       DocumentStatus @default(PENDING)
-  expiryDate   DateTime?
-  rejectedNote String?
-  verifiedAt   DateTime?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id             String         @id @default(uuid())
+  supplierId     String
+  supplier       Supplier       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  type           String         // PAN_CARD | GST_CERTIFICATE | VAT_CERTIFICATE | W9_FORM | W8_FORM | INCORPORATION_CERTIFICATE | MSME_CERTIFICATE | CANCELLED_CHEQUE | BANK_STATEMENT | ISO_CERTIFICATE | INSURANCE_CERTIFICATE | NDA | MSA | OTHER
+  name           String
+  fileUrl        String
+  fileSize       Int?
+  mimeType       String?
+  status         DocumentStatus @default(PENDING)
+  expiryDate     DateTime?
+  rejectedNote   String?
+  verifiedAt     DateTime?
+  validationNotes Json?         // automated format/size/cross-check results from lib/document-scan.ts — NOT OCR/authenticity verification
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([supplierId])
   @@index([supplierId, status])
