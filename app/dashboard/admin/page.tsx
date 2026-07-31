@@ -338,6 +338,45 @@ export default function AdminPage() {
 
       {modal==="group"&&<Modal title="Add Content Group" onClose={()=>{ setModal(null); setError(""); }}><Input label="Group Name *" value={groupForm.name} onChange={v=>setGroupForm(f=>({...f,name:v}))} placeholder="e.g. IT and Engineering"/><Input label="Description" value={groupForm.description} onChange={v=>setGroupForm(f=>({...f,description:v}))} placeholder="What this group covers"/><div><label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Color</label><input type="color" value={groupForm.color} onChange={e=>setGroupForm(f=>({...f,color:e.target.value}))} className="h-9 w-20 border border-gray-200 rounded-lg cursor-pointer"/></div><div className="flex gap-3 pt-2"><button onClick={createGroup} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Group"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
 
+      {showLookupUpload && (
+        <CsvUploadModal
+          config={{
+            title: "Upload Lookup Values",
+            description: "Bulk import departments, GL accounts, cost centers, categories.",
+            endpoint: "/api/upload/lookups",
+            templateName: "veltriance_lookups_template",
+            headers: ["type","code","label","sortOrder"],
+            requiredHeaders: ["type","code","label"],
+            exampleRows: [
+              ["DEPARTMENT","LEGAL","Legal & Compliance","9"],
+              ["GL_ACCOUNT","7000","7000 — Research & Development","10"],
+              ["CATEGORY","CAT-RND","Research & Development","9"],
+              ["PAYMENT_TERMS","NET90","Net 90 Days","6"],
+            ],
+          }}
+          onClose={() => setShowLookupUpload(false)}
+          onSuccess={() => { setShowLookupUpload(false); loadAll(); }}
+        />
+      )}
+      {showUserUpload && (
+        <CsvUploadModal
+          config={{
+            title: "Bulk Invite Users",
+            description: "Upload users to invite. They will be created with PENDING status.",
+            endpoint: "/api/upload/users",
+            templateName: "veltriance_users_template",
+            headers: ["name","email","role","department","jobTitle"],
+            requiredHeaders: ["name","email"],
+            exampleRows: [
+              ["Rajesh Kumar","rajesh.kumar@company.com","APPROVER","Engineering","Engineering Manager"],
+              ["Priya Sharma","priya.sharma@company.com","REQUESTOR","Finance","Finance Analyst"],
+              ["Amit Singh","amit.singh@company.com","PROCUREMENT","IT","IT Procurement Lead"],
+            ],
+          }}
+          onClose={() => setShowUserUpload(false)}
+          onSuccess={() => { setShowUserUpload(false); loadAll(); }}
+        />
+      )}
     </div>
   );
 }

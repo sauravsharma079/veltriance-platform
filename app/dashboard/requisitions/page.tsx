@@ -112,26 +112,6 @@ export default function RequisitionsPage() {
           </table>
         )}
       </div>
-    </div>
-      {showReqUpload && (
-        <CsvUploadModal
-          config={{
-            title: "Bulk Upload Requisitions",
-            description: "Import multiple purchase requisitions from CSV. All uploads start as DRAFT status.",
-            endpoint: "/api/upload/requisitions",
-            templateName: "veltriance_requisitions_template",
-            headers: ["title","category","amount","priority","department","justification","supplier","glAccount","quantity","deliveryLocation"],
-            requiredHeaders: ["title","amount"],
-            exampleRows: [
-              ["MacBook Pro 14-inch for Engineering", "IT Hardware", "142000", "HIGH", "Engineering", "Required for new hire onboarding", "Lenovo India", "6100", "1", "Ace HQ Bengaluru"],
-              ["Adobe Creative Cloud 10 seats Annual", "Software & Licenses", "180000", "MEDIUM", "Marketing", "Required for design team", "Adobe Systems India", "6200", "1", ""],
-              ["Office Ergonomic Chairs 20 units", "Facilities & Infra", "72000", "LOW", "HR", "New office floor setup", "", "6500", "20", "Ace Mumbai Office"],
-            ],
-          }}
-          onClose={() => setShowReqUpload(false)}
-          onSuccess={() => { setShowReqUpload(false); /* reload */ }}
-        />
-      )}
       {showReqUpload && (
         <CsvUploadModal
           config={{
@@ -143,7 +123,7 @@ export default function RequisitionsPage() {
             requiredHeaders: ["title","amount"],
             exampleRows: [
               ["MacBook Pro 14-inch for Engineering","IT Hardware","142000","HIGH","Engineering","Required for new hire","Lenovo India","6100","1","Ace HQ Bengaluru"],
-              ["Adobe Creative Cloud 10 seats","Software & Licenses","180000","MEDIUM","Marketing","Required for design team","Adobe Systems India","6200","1",""],
+              ["Adobe Creative Cloud 10 seats","Software & Licenses","180000","MEDIUM","Marketing","Required for design team","Adobe Systems","6200","1",""],
               ["Ergonomic Chairs 20 units","Facilities & Infra","72000","LOW","HR","New office setup","","6500","20",""],
             ],
           }}
@@ -151,5 +131,6 @@ export default function RequisitionsPage() {
           onSuccess={() => { setShowReqUpload(false); window.location.reload(); }}
         />
       )}
+    </div>
   );
 }
