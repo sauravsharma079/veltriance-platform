@@ -1,5 +1,5 @@
 "use client";
-
+import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText } from "lucide-react";
@@ -29,6 +29,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function RequisitionsPage() {
+  const [showReqUpload, setShowReqUpload] = useState(false);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [scope, setScope] = useState<"mine" | "all">("mine");
   const [loading, setLoading] = useState(true);
@@ -71,7 +72,8 @@ export default function RequisitionsPage() {
           <div className="px-5 py-10 text-center">
             <FileText className="size-8 text-gray-300 mx-auto mb-2" />
             <p className="text-sm text-gray-400">No requisitions yet.</p>
-            <Link href="/dashboard/intake" className="text-sm text-[#1A2A52] font-medium hover:underline mt-1 inline-block">
+
+            <button onClick={() => setShowReqUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5 mr-2"><svg className="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>Upload CSV</button>            <Link href="/dashboard/intake" className="text-sm text-[#1A2A52] font-medium hover:underline mt-1 inline-block">
               Submit your first request
             </Link>
           </div>
@@ -111,5 +113,24 @@ export default function RequisitionsPage() {
         )}
       </div>
     </div>
+      {showReqUpload && (
+        <CsvUploadModal
+          config={{
+            title: "Bulk Upload Requisitions",
+            description: "Import multiple purchase requisitions from CSV. All uploads start as DRAFT status.",
+            endpoint: "/api/upload/requisitions",
+            templateName: "veltriance_requisitions_template",
+            headers: ["title","category","amount","priority","department","justification","supplier","glAccount","quantity","deliveryLocation"],
+            requiredHeaders: ["title","amount"],
+            exampleRows: [
+              ["MacBook Pro 14-inch for Engineering", "IT Hardware", "142000", "HIGH", "Engineering", "Required for new hire onboarding", "Lenovo India", "6100", "1", "Ace HQ Bengaluru"],
+              ["Adobe Creative Cloud 10 seats Annual", "Software & Licenses", "180000", "MEDIUM", "Marketing", "Required for design team", "Adobe Systems India", "6200", "1", ""],
+              ["Office Ergonomic Chairs 20 units", "Facilities & Infra", "72000", "LOW", "HR", "New office floor setup", "", "6500", "20", "Ace Mumbai Office"],
+            ],
+          }}
+          onClose={() => setShowReqUpload(false)}
+          onSuccess={() => { setShowReqUpload(false); /* reload */ }}
+        />
+      )}
   );
 }

@@ -9,20 +9,13 @@ type ReqData = { title?:string; category?:string; priority?:string; department?:
 type Step = "WELCOME"|"WHAT"|"AI_SUGGEST"|"SUPPLIER_PICK"|"QUANTITY"|"PRICE"|"GL_ACCOUNT"|"MORE_ITEMS"|"CATEGORY"|"PRIORITY"|"DEPARTMENT"|"DATE"|"DELIVERY"|"JUSTIFY"|"CONFIRM"|"DONE";
 type Msg = { role:"bot"|"user"|"status"; text:string; options?:{label:string;value:string}[]; search?:boolean; };
 
-const GL_ACCOUNTS=[
-  {value:"6100",label:"6100 — IT Hardware & Equipment"},
-  {value:"6200",label:"6200 — Software & Licenses"},
-  {value:"6300",label:"6300 — Cloud & Hosting Services"},
-  {value:"6400",label:"6400 — Professional & Consulting Services"},
-  {value:"6500",label:"6500 — Facilities & Infrastructure"},
-  {value:"6600",label:"6600 — Office Supplies & Stationery"},
-  {value:"6700",label:"6700 — Travel & Expenses"},
-  {value:"6800",label:"6800 — Marketing & Advertising"},
-  {value:"6900",label:"6900 — Training & Development"},
-];
-const CATEGORIES=["IT Hardware","Software & Licenses","Cloud Services","Consulting","Facilities & Infra","Office Supplies","Marketing","Training","Telecom","Networking"];
+// GL_ACCOUNTS loaded from /api/admin/lookups?type=GL_ACCOUNT
+const GL_ACCOUNTS: {value:string;label:string}[] = [];
+// CATEGORIES loaded from /api/admin/lookups?type=CATEGORY
+const CATEGORIES: string[] = [];
 const PRIORITIES=[{label:"🔴 High — Urgent business need",value:"HIGH"},{label:"🟡 Medium — Standard timeline",value:"MEDIUM"},{label:"🟢 Low — Flexible timing",value:"LOW"}];
-const DEPTS=["Engineering","Finance","IT","Operations","HR","Marketing","Sales","Product","Legal","Executive"];
+// DEPTS loaded from /api/admin/lookups?type=DEPARTMENT
+const DEPTS: string[] = [];
 const QUICK_ITEMS=["Laptop / Computer","Software License","Cloud Services","Office Furniture","Network Equipment","Monitor / Display","Printer / Scanner","Server / Storage","Mobile Device","Consulting Services"];
 
 export default function IntakeBot() {
@@ -107,6 +100,16 @@ export default function IntakeBot() {
     addMsg("bot","",QUICK_ITEMS.map(i=>({label:i,value:i})));
     setStep("WHAT");
     fetchAddresses();
+    // Fetch dynamic lookup values
+    Promise.all([
+      fetch("/api/admin/lookups?type=GL_ACCOUNT").then(r=>r.json()).catch(()=>({lookups:[]})),
+      fetch("/api/admin/lookups?type=CATEGORY").then(r=>r.json()).catch(()=>({lookups:[]})),
+      fetch("/api/admin/lookups?type=DEPARTMENT").then(r=>r.json()).catch(()=>({lookups:[]})),
+    ]).then(([gl, cat, dept]) => {
+      if (gl.lookups?.length) setGlAccounts(gl.lookups.map((l:any)=>({ value:l.code, label:l.label })));
+      if (cat.lookups?.length) setCategories(cat.lookups.map((l:any)=>l.label));
+      if (dept.lookups?.length) setDepartments(dept.lookups.map((l:any)=>l.label));
+    });
   },[]);
 
   function restart(){

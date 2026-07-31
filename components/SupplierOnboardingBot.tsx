@@ -6,9 +6,11 @@ type Step = "WELCOME"|"NAME"|"CATEGORY"|"EMAIL"|"PHONE"|"CONTACT"|"CITY"|"PAYMEN
 type FormData = { name?:string; category?:string; contactEmail?:string; contactPhone?:string; contactName?:string; city?:string; country?:string; paymentTerms?:string; businessJustification?:string; };
 type Msg = { role:"bot"|"user"|"status"; text:string; options?:{label:string;value:string}[]; };
 
-const CATEGORIES=["IT Hardware","Software & Licenses","Cloud Services","Consulting","Facilities & Infra","Office Supplies","Marketing","Training","Telecom","Networking","Logistics","Manufacturing"];
-const PAYMENT_TERMS=["Net 15","Net 30","Net 45","Net 60","Advance 50%","Advance 100%"];
-const CITIES=["Bengaluru","Mumbai","Delhi / NCR","Hyderabad","Chennai","Pune","Kolkata","Ahmedabad","Noida","Gurugram"];
+// CATEGORIES loaded from /api/admin/lookups?type=CATEGORY
+const CATEGORIES: string[] = [];
+// PAYMENT_TERMS loaded from /api/admin/lookups?type=PAYMENT_TERMS
+const PAYMENT_TERMS: string[] = [];
+const CITIES: string[] = [];
 
 export default function SupplierOnboardingBot({ onClose }: { onClose?: () => void }) {
   const [step, setStep] = useState<Step>("WELCOME");

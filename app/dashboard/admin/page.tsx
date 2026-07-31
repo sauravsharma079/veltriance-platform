@@ -1,4 +1,5 @@
 "use client";
+import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
 import { useState, useEffect, useCallback } from "react";
 import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw } from "lucide-react";
 
@@ -25,11 +26,12 @@ const TABS = [
 ];
 
 const ROLES_LIST = ["ADMIN","PROCUREMENT","APPROVER","REQUESTOR","VIEWER"];
-const DEPTS = ["Engineering","Finance","IT","Operations","HR","Marketing","Sales","Product","Legal","Executive"];
+// DEPTS loaded from /api/admin/lookups?type=DEPARTMENT
+const DEPTS: string[] = [];
 const STEP_TYPES = ["MANAGER","DIRECTOR","FINANCE","EXECUTIVE","PROCUREMENT"];
 const FIELD_TYPES = ["TEXT","NUMBER","SELECT","BOOLEAN","DATE","TEXTAREA"];
 const MODULES = ["REQUISITION","SUPPLIER","PURCHASE_ORDER"];
-const LOOKUP_TYPES = ["DEPARTMENT","COST_CENTER","CATEGORY","GL_ACCOUNT","PAYMENT_TERMS","PRIORITY"];
+const LOOKUP_TYPES = ["DEPARTMENT","COST_CENTER","CATEGORY","GL_ACCOUNT","PAYMENT_TERMS","PRIORITY","DELIVERY_ADDRESS"];
 
 async function safeFetch(url: string) {
   try {
@@ -92,6 +94,8 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [modal, setModal] = useState<string|null>(null);
+  const [showLookupUpload, setShowLookupUpload] = useState(false);
+  const [showUserUpload, setShowUserUpload] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
   const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"" });
   const [ruleForm, setRuleForm] = useState({ name:"", priority:"10", minAmount:"", maxAmount:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager" }] });
@@ -190,6 +194,7 @@ export default function AdminPage() {
         {loading ? <div className="flex items-center justify-center h-64"><div className="size-8 border-2 border-[#1A2A52]/20 border-t-[#1A2A52] rounded-full animate-spin"/></div> : <>
 
           {tab==="users"&&(
+              <>{showUserUpload && <CsvUploadModal config={{title:"Bulk Invite Users",description:"Upload users to invite. They will be created with PENDING status.",endpoint:"/api/upload/users",templateName:"veltriance_users_template",headers:["name","email","role","department","jobTitle"],requiredHeaders:["name","email"],exampleRows:[["Rajesh Kumar","rajesh.kumar@company.com","APPROVER","Engineering","Engineering Manager"],["Priya Sharma","priya.sharma@company.com","REQUESTOR","Finance","Finance Analyst"],["Amit Singh","amit.singh@company.com","PROCUREMENT","IT","IT Procurement Lead"]]}} onClose={()=>setShowUserUpload(false)} onSuccess={()=>{setShowUserUpload(false);loadAll();}}/>}<
             <div>
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-base font-semibold text-gray-900">Users & Invites <span className="text-sm font-normal text-gray-400 ml-1">{users.length} total</span></h2>

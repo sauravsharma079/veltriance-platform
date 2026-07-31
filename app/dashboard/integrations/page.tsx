@@ -194,7 +194,8 @@ const CONNECTORS: Connector[] = [
   },
 ];
 
-const CATEGORIES = ["All", "Source-to-Pay", "ERP", "Finance", "Communication"];
+// CATEGORIES loaded from /api/admin/lookups?type=CATEGORY
+const CATEGORIES: string[] = [];
 
 type Live = { id: string; status: string; lastSyncAt: string | null };
 
