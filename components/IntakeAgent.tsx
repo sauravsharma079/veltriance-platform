@@ -356,7 +356,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
               {busy ? <Loader2 className="size-3 text-white animate-spin" /> : <Send className="size-3 text-white" />}
             </button>
           </div>
-          {confidence === "heuristic" && step !== "WELCOME" && <p className="text-[9px] text-amber-500 mt-1 text-center">No LLM connected — using keyword extraction. Set ANTHROPIC_API_KEY for real understanding.</p>}
+          {confidence === "heuristic" && step !== "WELCOME" && <p className="text-[9px] text-amber-500 mt-1 text-center">No LLM connected — using keyword extraction. Set GROQ_API_KEY (free, no card) for real understanding.</p>}
         </div>
       </div>
     </div>
