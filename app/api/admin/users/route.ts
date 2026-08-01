@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { requireAdmin } from "@/lib/api-auth";
 
 async function getCtx() {
   const sb = await createClient();
@@ -29,12 +30,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await getCtx();
-    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const admin = await requireAdmin();
+    if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const body = await req.json();
     const user = await prisma.user.create({
       data: {
-        organizationId: ctx.org.id,
+        organizationId: admin.organizationId,
         email: body.email, name: body.name,
         role: body.role || 'REQUESTOR',
         jobTitle: body.jobTitle || null,

@@ -65,6 +65,28 @@ export async function resolveReadActor(
   return resolveUploadActor(req, requiredScope);
 }
 
+export type AdminActor = { profile: { id: string; name: string; role: string }; organizationId: string };
+
+/**
+ * Session-only admin gate (no bearer-token path — admin config endpoints are
+ * dashboard-only). Several /api/admin/* routes were missing this check entirely
+ * on their base (list/create) endpoints while their [id] (edit/delete) siblings
+ * had it, which meant any authenticated org member — not just ADMIN — could hit
+ * the unguarded ones (e.g. create a user with role: "ADMIN", or delete approval
+ * rules). Use this on every /api/admin/* write route.
+ */
+export async function requireAdmin(): Promise<AdminActor | null> {
+  const sb = await createClient();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return null;
+  const [profile, organization] = await Promise.all([
+    prisma.user.findUnique({ where: { authId: user.id } }),
+    getCurrentOrganization(),
+  ]);
+  if (!profile || !organization || profile.role !== "ADMIN" || profile.organizationId !== organization.id) return null;
+  return { profile: { id: profile.id, name: profile.name, role: profile.role }, organizationId: organization.id };
+}
+
 export const apiOk  = (data: unknown, meta?: Record<string, unknown>) => Response.json({ ...meta, data });
 export const apiErr = (msg: string, status: number) => Response.json({ error: msg }, { status });
 

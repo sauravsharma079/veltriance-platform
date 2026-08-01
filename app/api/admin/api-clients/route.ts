@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { requireAdmin } from "@/lib/api-auth";
 import crypto from "crypto";
 
 export async function GET() {
@@ -39,11 +40,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const admin = await requireAdmin();
+    if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const body = await req.json();
     const { name, description, scopes } = body;
     if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
@@ -57,7 +55,7 @@ export async function POST(req: NextRequest) {
     try {
       client = await (prisma.apiClient.create as any)({
         data: {
-          organizationId: org.id, name: name.trim(),
+          organizationId: admin.organizationId, name: name.trim(),
           description: description || null, clientId: rawClientId,
           clientSecretHash: secretHash,
           scopes: Array.isArray(scopes) ? scopes : [], active: true,
@@ -66,7 +64,7 @@ export async function POST(req: NextRequest) {
     } catch {
       client = await (prisma.apiClient.create as any)({
         data: {
-          organizationId: org.id, name: name.trim(),
+          organizationId: admin.organizationId, name: name.trim(),
           description: description || null, clientId: rawClientId,
           clientSecret: rawSecret,
           scopes: Array.isArray(scopes) ? scopes : [], active: true,
@@ -91,13 +89,10 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const admin = await requireAdmin();
+    if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const { id } = await req.json();
-    await prisma.apiClient.delete({ where: { id, organizationId: org.id } });
+    await prisma.apiClient.delete({ where: { id, organizationId: admin.organizationId } });
     return NextResponse.json({ ok: true });
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { requireAdmin } from "@/lib/api-auth";
 
 async function getCtx() {
   const sb = await createClient();
@@ -30,12 +31,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await getCtx();
-    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const admin = await requireAdmin();
+    if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const body = await req.json();
     const rule = await prisma.approvalRule.create({
       data: {
-        organizationId: ctx.org.id,
+        organizationId: admin.organizationId,
         name: body.name, priority: body.priority || 10,
         active: body.active ?? true,
         minAmount: body.minAmount || null,
@@ -58,9 +59,11 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const ctx = await getCtx();
-    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const admin = await requireAdmin();
+    if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const { id } = await req.json();
+    const existing = await prisma.approvalRule.findFirst({ where: { id, organizationId: admin.organizationId } });
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     await prisma.approvalRuleStep.deleteMany({ where: { ruleId: id } });
     await prisma.approvalRule.delete({ where: { id } });
     return NextResponse.json({ success: true });

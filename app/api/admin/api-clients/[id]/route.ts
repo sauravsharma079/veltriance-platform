@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { requireAdmin } from "@/lib/api-auth";
 import crypto from "crypto";
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const admin = await requireAdmin();
+    if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const body = await req.json();
 
     if (body.rotate_secret) {
@@ -20,12 +16,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       let client: any;
       try {
         client = await (prisma.apiClient.update as any)({
-          where: { id, organizationId: org.id },
+          where: { id, organizationId: admin.organizationId },
           data: { clientSecretHash: secretHash },
         });
       } catch {
         client = await (prisma.apiClient.update as any)({
-          where: { id, organizationId: org.id },
+          where: { id, organizationId: admin.organizationId },
           data: { clientSecret: rawSecret },
         });
       }
@@ -35,7 +31,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     // Toggle active
     const client = await prisma.apiClient.update({
-      where: { id, organizationId: org.id },
+      where: { id, organizationId: admin.organizationId },
       data: { active: body.active },
     });
     return NextResponse.json({ client: { ...client, _count: { tokens: 0 } } });
@@ -48,12 +44,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 export async function DELETE(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    await prisma.apiClient.delete({ where: { id, organizationId: org.id } });
+    const admin = await requireAdmin();
+    if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    await prisma.apiClient.delete({ where: { id, organizationId: admin.organizationId } });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message }, { status: 500 });

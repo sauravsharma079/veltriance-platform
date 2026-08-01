@@ -1,24 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
-
-async function getCtx() {
-  const sb = await createClient();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return null;
-  const [profile, org] = await Promise.all([
-    prisma.user.findUnique({ where: { authId: user.id } }),
-    getCurrentOrganization(),
-  ]);
-  if (!profile || !org) return null;
-  return { profile, org };
-}
+import { requireAdmin } from "@/lib/api-auth";
 
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  const ctx = await getCtx();
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const existing = await prisma.user.findFirst({ where: { id, organizationId: admin.organizationId } });
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   const body = await req.json();
   const user = await prisma.user.update({
     where: { id },
@@ -35,8 +24,11 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 
 export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  const ctx = await getCtx();
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const existing = await prisma.user.findFirst({ where: { id, organizationId: admin.organizationId } });
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (id === admin.profile.id) return NextResponse.json({ error: "You can't delete your own account." }, { status: 400 });
   await prisma.user.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }
