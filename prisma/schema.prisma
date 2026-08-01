@@ -59,6 +59,11 @@ model User {
   businessUnit       String?
   costCenter         String?
   country            String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  postalCode         String?
   phone              String?
   jobTitle           String?
   inviteStatus       String?      @default("ACTIVE")
@@ -409,6 +414,12 @@ model ApprovalStep {
   sequence      Int
   approverId    String?
   approver      User?              @relation(fields: [approverId], references: [id])
+  // When multiple ApprovalStep rows share the same (requisitionId, sequence), they're
+  // a parallel group instantiated from one ApprovalRuleStep with multiple approvers.
+  // approverMode governs how the group resolves: ANY = first response (approve or
+  // reject) decides for the whole group; ALL = every member must approve, and a
+  // single reject from anyone still kills the whole requisition.
+  approverMode  String             @default("ANY")
   status        ApprovalStepStatus @default(PENDING)
   comment       String?
   decidedAt     DateTime?
@@ -423,6 +434,11 @@ model ApprovalRule {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
+  // Labels which flow this rule applies to. Only REQUISITION is actually consumed by
+  // an execution engine today (intake submission creates a Requisition, which is the
+  // same flow) — other values are accepted for forward compatibility but not yet
+  // wired to a real approval-consuming workflow.
+  module         String       @default("REQUISITION")
   priority       Int          @default(100)
   active         Boolean      @default(true)
   minAmount      Decimal?     @db.Decimal(14, 2)
@@ -438,14 +454,16 @@ model ApprovalRule {
 }
 
 model ApprovalRuleStep {
-  id             String           @id @default(uuid())
-  ruleId         String
-  rule           ApprovalRule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  sequence       Int
-  stepType       ApprovalStepType
-  stepLabel      String?
-  assignedUserId String?
-  createdAt      DateTime         @default(now())
+  id              String           @id @default(uuid())
+  ruleId          String
+  rule            ApprovalRule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  sequence        Int
+  stepType        ApprovalStepType
+  stepLabel       String?
+  assignedUserId  String?          // legacy single-approver case (kept for backward compatibility)
+  approverUserIds String[]         @default([]) // when non-empty: a parallel step — these specific people, not stepType-based routing
+  approverMode    String           @default("ANY") // ANY = first response wins | ALL = every listed approver must approve
+  createdAt       DateTime         @default(now())
 
   @@index([ruleId])
 }

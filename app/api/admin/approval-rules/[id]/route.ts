@@ -18,6 +18,7 @@ async function requireAdmin() {
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
+  module: z.string().optional(),
   priority: z.number().int().optional(),
   active: z.boolean().optional(),
   minAmount: z.number().nonnegative().nullable().optional(),
@@ -29,6 +30,8 @@ const updateSchema = z.object({
     stepType: z.enum(["MANAGER", "DIRECTOR", "PROCUREMENT", "FINANCE", "CUSTOM"]),
     stepLabel: z.string().nullable().optional(),
     assignedUserId: z.string().nullable().optional(),
+    approverUserIds: z.array(z.string()).optional(),
+    approverMode: z.enum(["ANY", "ALL"]).optional(),
   })).optional(),
 });
 

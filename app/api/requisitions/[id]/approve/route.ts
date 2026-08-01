@@ -1,18 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { RequisitionStatus, ApprovalStepType } from "@prisma/client";
+import { RequisitionStatus } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { canActOnStep } from "@/lib/approval-matrix";
+import { canActOnStep, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { generatePONumber } from "@/lib/po-number";
-
-const STATUS_FOR_STEP: Record<ApprovalStepType, RequisitionStatus> = {
-  [ApprovalStepType.MANAGER]: RequisitionStatus.MANAGER_APPROVAL,
-  [ApprovalStepType.DIRECTOR]: RequisitionStatus.DIRECTOR_APPROVAL,
-  [ApprovalStepType.PROCUREMENT]: RequisitionStatus.PROCUREMENT_REVIEW,
-  [ApprovalStepType.FINANCE]: RequisitionStatus.FINANCE_APPROVAL,
-};
 
 const actionSchema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
@@ -47,19 +40,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const currentStep = requisition.approvalSteps.find((s) => s.status === "PENDING");
-  if (!currentStep) {
+  // Steps sharing the same sequence number are a parallel group (see
+  // ApprovalStep.approverMode in schema.prisma). "Current" is the lowest sequence
+  // that still has anything pending.
+  const pendingSteps = requisition.approvalSteps.filter((s) => s.status === "PENDING");
+  if (pendingSteps.length === 0) {
     return NextResponse.json({ error: "No pending approval step on this requisition" }, { status: 400 });
   }
+  const currentSequence = Math.min(...pendingSteps.map((s) => s.sequence));
+  const currentGroup = pendingSteps.filter((s) => s.sequence === currentSequence);
 
-  if (!canActOnStep(currentStep, profile)) {
+  const myStep = currentGroup.find((s) => canActOnStep(s, profile));
+  if (!myStep) {
     return NextResponse.json({ error: "You're not authorized to act on this approval step" }, { status: 403 });
   }
 
   if (parsed.data.decision === "REJECT") {
+    // A reject always kills the requisition, regardless of ANY/ALL mode — a single
+    // veto is meaningful either way.
     await prisma.$transaction([
       prisma.approvalStep.update({
-        where: { id: currentStep.id },
+        where: { id: myStep.id },
         data: { status: "REJECTED", comment: parsed.data.comment, decidedAt: new Date(), approverId: profile.id },
       }),
       prisma.approvalStep.updateMany({
@@ -71,16 +72,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ status: "REJECTED" });
   }
 
-  // Approve this step, then figure out what's next.
-  const nextStep = requisition.approvalSteps.find((s) => s.sequence === currentStep.sequence + 1);
-  const isFullyApproved = !nextStep;
-  const newStatus = isFullyApproved ? RequisitionStatus.APPROVED : STATUS_FOR_STEP[nextStep.stepType];
+  const otherPendingInGroup = currentGroup.filter((s) => s.id !== myStep.id);
+
+  if (myStep.approverMode === "ALL" && otherPendingInGroup.length > 0) {
+    // ALL mode: record this approval but wait for the rest of the group before the
+    // requisition's status moves on.
+    await prisma.approvalStep.update({
+      where: { id: myStep.id },
+      data: { status: "APPROVED", comment: parsed.data.comment, decidedAt: new Date(), approverId: profile.id },
+    });
+    return NextResponse.json({ status: requisition.status, waitingOn: otherPendingInGroup.length });
+  }
+
+  // Either ANY mode (first response wins — approve this step and skip the rest of
+  // the group) or the last outstanding ALL-mode approver. Either way this closes out
+  // the current sequence, so figure out what's next.
+  const nextGroup = requisition.approvalSteps.filter((s) => s.sequence === currentSequence + 1);
+  const isFullyApproved = nextGroup.length === 0;
+  const newStatus = isFullyApproved ? RequisitionStatus.APPROVED : STATUS_FOR_STEP[nextGroup[0].stepType];
 
   await prisma.$transaction([
     prisma.approvalStep.update({
-      where: { id: currentStep.id },
+      where: { id: myStep.id },
       data: { status: "APPROVED", comment: parsed.data.comment, decidedAt: new Date(), approverId: profile.id },
     }),
+    ...(otherPendingInGroup.length > 0
+      ? [prisma.approvalStep.updateMany({ where: { id: { in: otherPendingInGroup.map((s) => s.id) } }, data: { status: "SKIPPED" } })]
+      : []),
     prisma.requisition.update({
       where: { id },
       data: { status: newStatus },

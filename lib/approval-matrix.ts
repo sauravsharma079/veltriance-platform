@@ -15,6 +15,8 @@ export type ApprovalStepDef = {
   stepLabel: string | null;
   sequence: number;
   assignedUserId: string | null;
+  approverUserIds: string[];
+  approverMode: "ANY" | "ALL";
 };
 
 /**
@@ -55,6 +57,8 @@ export async function resolveApprovalSteps(
         stepLabel: s.stepLabel,
         sequence: i + 1,
         assignedUserId: s.assignedUserId,
+        approverUserIds: s.approverUserIds,
+        approverMode: (s.approverMode === "ALL" ? "ALL" : "ANY") as "ANY" | "ALL",
       }));
     }
   }
@@ -65,17 +69,17 @@ export async function resolveApprovalSteps(
 
 function getHardcodedSteps(amount: number): ApprovalStepDef[] {
   if (amount < 5000) {
-    return [{ stepType: ApprovalStepType.MANAGER, stepLabel: null, sequence: 1, assignedUserId: null }];
+    return [{ stepType: ApprovalStepType.MANAGER, stepLabel: null, sequence: 1, assignedUserId: null, approverUserIds: [], approverMode: "ANY" }];
   }
   if (amount < 25000) {
     return [
-      { stepType: ApprovalStepType.MANAGER, stepLabel: null, sequence: 1, assignedUserId: null },
-      { stepType: ApprovalStepType.DIRECTOR, stepLabel: null, sequence: 2, assignedUserId: null },
+      { stepType: ApprovalStepType.MANAGER, stepLabel: null, sequence: 1, assignedUserId: null, approverUserIds: [], approverMode: "ANY" },
+      { stepType: ApprovalStepType.DIRECTOR, stepLabel: null, sequence: 2, assignedUserId: null, approverUserIds: [], approverMode: "ANY" },
     ];
   }
   return [
-    { stepType: ApprovalStepType.PROCUREMENT, stepLabel: null, sequence: 1, assignedUserId: null },
-    { stepType: ApprovalStepType.FINANCE, stepLabel: null, sequence: 2, assignedUserId: null },
+    { stepType: ApprovalStepType.PROCUREMENT, stepLabel: null, sequence: 1, assignedUserId: null, approverUserIds: [], approverMode: "ANY" },
+    { stepType: ApprovalStepType.FINANCE, stepLabel: null, sequence: 2, assignedUserId: null, approverUserIds: [], approverMode: "ANY" },
   ];
 }
 

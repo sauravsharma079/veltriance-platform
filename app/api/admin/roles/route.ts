@@ -16,6 +16,7 @@ export async function GET() {
     if (!profile || !org) return NextResponse.json({ roles: [] });
     const roles = await prisma.workspaceRole.findMany({
       where: { organizationId: org.id }, orderBy: { name: 'asc' },
+      include: { userRoles: { include: { user: { select: { id: true, name: true } } } } },
     });
     return NextResponse.json({ roles });
   } catch { return NextResponse.json({ roles: [] }); }

@@ -2,16 +2,19 @@
 import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
 import { AdminAgent } from "@/components/AdminAgent";
 import { useState, useEffect, useCallback } from "react";
-import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles } from "lucide-react";
+import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers } from "lucide-react";
 
-type User = { id:string; name:string; email:string; role:string; department:string|null; inviteStatus:string; jobTitle:string|null };
+type User = { id:string; name:string; email:string; role:string; department:string|null; inviteStatus:string; jobTitle:string|null; employeeId:string|null; managerId:string|null; manager:{id:string;name:string}|null; businessUnit:string|null; costCenter:string|null; addressLine1:string|null; addressLine2:string|null; city:string|null; state:string|null; postalCode:string|null; country:string|null; userRoles:{role:{id:string;name:string}}[]; contentGroupMembers:{contentGroup:{id:string;name:string}}[]; chartOfAccountAccess:{chartOfAccount:{id:string;code:string}}[] };
 type Supplier = { id:string; name:string; code:string; status:string; category:string|null; contactEmail:string|null; onboardingStage:string|null };
-type RuleStep = { id:string; sequence:number; stepType:string; stepLabel:string };
-type Rule = { id:string; name:string; priority:number; active:boolean; minAmount:number|null; maxAmount:number|null; steps:RuleStep[] };
+type RuleStep = { id:string; sequence:number; stepType:string; stepLabel:string; approverUserIds:string[]; approverMode:string };
+type Rule = { id:string; name:string; module:string; priority:number; active:boolean; minAmount:number|null; maxAmount:number|null; category:string|null; department:string|null; steps:RuleStep[] };
+const APPROVAL_MODULES = ["REQUISITION","INTAKE","SUPPLIER_ONBOARDING","CONTRACT"];
 type Field = { id:string; entity:string; name:string; fieldKey:string; fieldType:string; required:boolean; helpText:string|null; options:string[]; categories:string[] };
-type Lookup = { id:string; type:string; code:string; label:string };
+type Lookup = { id:string; type:string; code:string; label:string; parentCode:string|null };
 type ContentGroup = { id:string; name:string; description:string|null; color:string|null };
-type WorkspaceRole = { id:string; name:string; description:string|null; isSystem:boolean; permissions:string[] };
+type WorkspaceRole = { id:string; name:string; description:string|null; isSystem:boolean; permissions:Record<string,Record<string,boolean>>; userRoles:{user:{id:string;name:string}}[] };
+const PERM_MODULES = ["requisitions","approvals","purchaseOrders","suppliers","reports","admin"];
+const PERM_ACTIONS = ["view","create","edit","delete","submit","approve","send","manage"];
 type ApiClient = { id:string; name:string; description:string|null; clientId:string; scopes:string[]; active:boolean };
 type CoaSegment = { id:string; position:number; name:string; description:string|null; linkedLookupType:string|null };
 type Coa = { id:string; name:string; code:string; companyCode:string|null; currency:string; taxType:string|null; taxRegNumber:string|null; billingCity:string|null; billingCountry:string|null; segments:CoaSegment[] };
@@ -26,6 +29,7 @@ const TABS = [
   { id:"content", label:"Content Groups", icon:BookOpen },
   { id:"chains", label:"Approval Chains", icon:CheckSquare },
   { id:"fields", label:"Custom Fields", icon:Sliders },
+  { id:"commodities", label:"Commodities", icon:Layers },
   { id:"lookups", label:"Lookups", icon:List },
   { id:"coa", label:"Chart of Accounts", icon:BarChart2 },
   { id:"catalogs", label:"Catalogs", icon:Package },
@@ -73,6 +77,92 @@ function Sel({ label, value, onChange, options }: { label:string; value:string; 
   );
 }
 
+function StepEditor({ steps, setSteps, users }: { steps:any[]; setSteps:(fn:(s:any[])=>any[])=>void; users:{id:string;name:string}[] }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Approval Steps</label>
+      <div className="space-y-3">
+        {steps.map((step,i)=>(
+          <div key={i} className="border border-gray-200 rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="size-5 bg-[#1A2A52] text-white rounded-full text-[10px] flex items-center justify-center font-bold shrink-0">{i+1}</span>
+              <select value={step.stepType} onChange={e=>setSteps(s=>{const n=[...s];n[i]={...n[i],stepType:e.target.value};return n;})} className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]">{STEP_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+              <input value={step.stepLabel} onChange={e=>setSteps(s=>{const n=[...s];n[i]={...n[i],stepLabel:e.target.value};return n;})} className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]" placeholder="Step label"/>
+              {i>0&&<button onClick={()=>setSteps(s=>s.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500"><X className="size-3.5"/></button>}
+            </div>
+            <MultiSel label="Specific approvers (optional — leave empty to route by role above)" selected={step.approverUserIds} onChange={v=>setSteps(s=>{const n=[...s];n[i]={...n[i],approverUserIds:v};return n;})} options={users}/>
+            {step.approverUserIds.length>1&&(
+              <div className="flex items-center gap-3 mt-2">
+                <label className="flex items-center gap-1.5 text-[10px] text-gray-600 cursor-pointer"><input type="radio" checked={step.approverMode==="ANY"} onChange={()=>setSteps(s=>{const n=[...s];n[i]={...n[i],approverMode:"ANY"};return n;})}/>Any one approves (parallel)</label>
+                <label className="flex items-center gap-1.5 text-[10px] text-gray-600 cursor-pointer"><input type="radio" checked={step.approverMode==="ALL"} onChange={()=>setSteps(s=>{const n=[...s];n[i]={...n[i],approverMode:"ALL"};return n;})}/>All must approve (parallel)</label>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <button onClick={()=>setSteps(s=>[...s,{sequence:s.length+1,stepType:"FINANCE",stepLabel:"Finance Sign-off",approverUserIds:[],approverMode:"ANY"}])} className="mt-2 flex items-center gap-1 text-xs text-[#1A2A52] font-semibold hover:underline"><Plus className="size-3"/>Add Step</button>
+    </div>
+  );
+}
+
+function PermMatrix({ value, onChange }: { value:Record<string,Record<string,boolean>>; onChange:(v:Record<string,Record<string,boolean>>)=>void }) {
+  function toggle(mod:string, act:string) {
+    onChange({ ...value, [mod]: { ...(value[mod]||{}), [act]: !value[mod]?.[act] } });
+  }
+  return (
+    <div>
+      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Permissions</label>
+      <div className="border border-gray-200 rounded-xl overflow-x-auto">
+        <table className="w-full text-[10px]">
+          <thead><tr className="bg-gray-50">
+            <th className="text-left px-2 py-1.5 font-semibold text-gray-500">Module</th>
+            {PERM_ACTIONS.map(a=><th key={a} className="px-1 py-1.5 font-semibold text-gray-500 capitalize">{a}</th>)}
+          </tr></thead>
+          <tbody>
+            {PERM_MODULES.map(mod=>(
+              <tr key={mod} className="border-t border-gray-100">
+                <td className="px-2 py-1.5 font-medium text-gray-700">{mod.replace(/([A-Z])/g," $1")}</td>
+                {PERM_ACTIONS.map(act=>(
+                  <td key={act} className="text-center px-1 py-1.5"><input type="checkbox" checked={!!value[mod]?.[act]} onChange={()=>toggle(mod,act)} className="accent-[#1A2A52]"/></td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function UserSel({ label, value, onChange, users }: { label:string; value:string; onChange:(v:string)=>void; users:{id:string;name:string}[] }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
+      <select value={value} onChange={e=>onChange(e.target.value)}
+        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1A2A52]">
+        <option value="">None</option>
+        {users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function MultiSel({ label, selected, onChange, options }: { label:string; selected:string[]; onChange:(v:string[])=>void; options:{id:string;name:string}[] }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
+      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto border border-gray-200 rounded-xl p-2">
+        {options.length===0?<span className="text-xs text-gray-400 px-1 py-0.5">None configured yet</span>:options.map(o=>(
+          <label key={o.id} className="flex items-center gap-1.5 text-xs bg-gray-50 px-2 py-1 rounded-lg cursor-pointer">
+            <input type="checkbox" checked={selected.includes(o.id)} onChange={e=>onChange(e.target.checked?[...selected,o.id]:selected.filter(x=>x!==o.id))} className="accent-[#1A2A52]"/>
+            {o.name}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Modal({ title, onClose, children }: { title:string; onClose:()=>void; children:React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -113,12 +203,17 @@ export default function AdminPage() {
   const [activeSuppliers, setActiveSuppliers] = useState<ActiveSupplier[]>([]);
   const [catalogForm, setCatalogForm] = useState({ name:"", type:"HOSTED", description:"", punchoutUrl:"", cxmlFromDomain:"", cxmlFromIdentity:"", cxmlToDomain:"", cxmlToIdentity:"", cxmlSenderDomain:"", cxmlSenderIdentity:"", cxmlSharedSecret:"" });
   const [itemForm, setItemForm] = useState({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", unit:"", leadDays:"", supplierId:"" });
-  const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"" });
-  const [ruleForm, setRuleForm] = useState({ name:"", priority:"10", minAmount:"", maxAmount:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager" }] });
+  const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"", employeeId:"", managerId:"", businessUnit:"", costCenter:"", addressLine1:"", city:"", state:"", postalCode:"", country:"", contentGroupIds:[] as string[], workspaceRoleIds:[] as string[] });
+  const [ruleForm, setRuleForm] = useState({ name:"", module:"REQUISITION", priority:"10", minAmount:"", maxAmount:"", category:"", department:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager", approverUserIds:[] as string[], approverMode:"ANY" }] });
   const [lookupForm, setLookupForm] = useState({ type:"DEPARTMENT", code:"", label:"" });
+  const [commodityForm, setCommodityForm] = useState({ code:"", label:"", parentCode:"" });
+  const [expandedCommodity, setExpandedCommodity] = useState<string|null>(null);
+  const [expandedCommodity2, setExpandedCommodity2] = useState<string|null>(null);
   const [fieldForm, setFieldForm] = useState({ entity:"REQUISITION", name:"", fieldType:"TEXT", required:false, helpText:"", options:"", categories:[] as string[] });
   const [groupForm, setGroupForm] = useState({ name:"", description:"", color:"#1A2A52" });
+  const [roleForm, setRoleForm] = useState<{name:string;description:string;permissions:Record<string,Record<string,boolean>>}>({ name:"", description:"", permissions:{} });
   const [coaForm, setCoaForm] = useState({ name:"", code:"", companyCode:"", currency:"INR", taxType:"", taxRegNumber:"", billingCity:"", billingCountry:"" });
+  const [segmentForm, setSegmentForm] = useState<{coaId:string;position:number;name:string;description:string;isRequired:boolean;linkedLookupType:string}>({ coaId:"", position:1, name:"", description:"", isRequired:false, linkedLookupType:"" });
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError("");
@@ -165,18 +260,34 @@ export default function AdminPage() {
 
   async function createUser() {
     if (!userForm.email || !userForm.name) { setError("Name and email required"); return; }
-    await apiCall("/api/admin/users", "POST", userForm);
-    setUserForm({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"" });
+    setSaving(true); setError("");
+    try {
+      const r = await fetch("/api/admin/users", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(userForm) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : JSON.stringify(d.error) || "Failed");
+      const newId = d.user.id;
+      for (const gid of userForm.contentGroupIds) await fetch(`/api/admin/users/${newId}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ addContentGroupId: gid }) });
+      for (const rid of userForm.workspaceRoleIds) await fetch(`/api/admin/users/${newId}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ addWorkspaceRoleId: rid }) });
+      await loadAll();
+      setModal(null);
+    } catch (e:any) { setError(e.message); }
+    setSaving(false);
+    setUserForm({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"", employeeId:"", managerId:"", businessUnit:"", costCenter:"", addressLine1:"", city:"", state:"", postalCode:"", country:"", contentGroupIds:[], workspaceRoleIds:[] });
   }
   async function createRule() {
     if (!ruleForm.name) { setError("Rule name required"); return; }
-    await apiCall("/api/admin/approval-rules", "POST", { name:ruleForm.name, priority:parseInt(ruleForm.priority)||10, active:true, minAmount:ruleForm.minAmount?parseFloat(ruleForm.minAmount):null, maxAmount:ruleForm.maxAmount?parseFloat(ruleForm.maxAmount):null, steps:ruleForm.steps });
-    setRuleForm({ name:"", priority:"10", minAmount:"", maxAmount:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager" }] });
+    await apiCall("/api/admin/approval-rules", "POST", { name:ruleForm.name, module:ruleForm.module, priority:parseInt(ruleForm.priority)||10, active:true, minAmount:ruleForm.minAmount?parseFloat(ruleForm.minAmount):null, maxAmount:ruleForm.maxAmount?parseFloat(ruleForm.maxAmount):null, category:ruleForm.category||null, department:ruleForm.department||null, steps:ruleForm.steps });
+    setRuleForm({ name:"", module:"REQUISITION", priority:"10", minAmount:"", maxAmount:"", category:"", department:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager", approverUserIds:[], approverMode:"ANY" }] });
   }
   async function createLookup() {
     if (!lookupForm.code || !lookupForm.label) { setError("Code and label required"); return; }
     await apiCall("/api/admin/lookups", "POST", lookupForm);
     setLookupForm({ type:"DEPARTMENT", code:"", label:"" });
+  }
+  async function createCommodity() {
+    if (!commodityForm.code || !commodityForm.label) { setError("Code and label required"); return; }
+    await apiCall("/api/admin/lookups", "POST", { type:"COMMODITY", code:commodityForm.code, label:commodityForm.label, parentCode: commodityForm.parentCode || undefined });
+    setCommodityForm({ code:"", label:"", parentCode:"" });
   }
   async function createField() {
     if (!fieldForm.name) { setError("Field name required"); return; }
@@ -188,10 +299,20 @@ export default function AdminPage() {
     await apiCall("/api/admin/content-groups", "POST", groupForm);
     setGroupForm({ name:"", description:"", color:"#1A2A52" });
   }
+  async function createRole() {
+    if (!roleForm.name) { setError("Role name required"); return; }
+    await apiCall("/api/admin/roles", "POST", roleForm);
+    setRoleForm({ name:"", description:"", permissions:{} });
+  }
   async function createCoa() {
     if (!coaForm.name || !coaForm.code) { setError("COA name and code required"); return; }
     await apiCall("/api/admin/coa", "POST", { type:"coa", ...coaForm });
     setCoaForm({ name:"", code:"", companyCode:"", currency:"INR", taxType:"", taxRegNumber:"", billingCity:"", billingCountry:"" });
+  }
+  async function createSegment() {
+    if (!segmentForm.name) { setError("Segment name required"); return; }
+    await apiCall("/api/admin/coa", "POST", { type:"segment", ...segmentForm });
+    setSegmentForm({ coaId:"", position:1, name:"", description:"", isRequired:false, linkedLookupType:"" });
   }
   async function createCatalog() {
     if (!catalogForm.name) { setError("Catalog name required"); return; }
@@ -322,16 +443,28 @@ export default function AdminPage() {
 
           {tab==="roles"&&(
             <div>
-              <h2 className="text-base font-semibold text-gray-900 mb-5">Workspace Roles</h2>
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-base font-semibold text-gray-900">Workspace Roles <span className="text-sm font-normal text-gray-400 ml-1">{roles.length} configured</span></h2>
+                <button onClick={()=>{ setRoleForm({name:"",description:"",permissions:{}}); setModal("role"); }} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Role</button>
+              </div>
               {roles.length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No roles configured</div>:(
                 <div className="grid grid-cols-3 gap-4">
-                  {roles.map(r=>(
+                  {roles.map(r=>{
+                    const activeModules = PERM_MODULES.filter(m=>PERM_ACTIONS.some(a=>r.permissions?.[m]?.[a]));
+                    return (
                     <div key={r.id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                      <div className="flex items-center gap-2 mb-2"><div className="size-8 bg-[#1A2A52]/8 rounded-lg flex items-center justify-center"><Shield className="size-4 text-[#1A2A52]"/></div><p className="text-sm font-semibold text-gray-900 flex-1">{r.name}</p>{r.isSystem&&<span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">System</span>}</div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="size-8 bg-[#1A2A52]/8 rounded-lg flex items-center justify-center"><Shield className="size-4 text-[#1A2A52]"/></div>
+                        <p className="text-sm font-semibold text-gray-900 flex-1">{r.name}</p>
+                        {r.isSystem&&<span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">System</span>}
+                        <button onClick={()=>{ setEditItem({...r}); setModal("editRole"); }} className="p-1 text-gray-400 hover:text-[#1A2A52] rounded hover:bg-gray-100"><Edit2 className="size-3"/></button>
+                        {!r.isSystem&&<button onClick={()=>{ if(confirm(`Delete role "${r.name}"?`)) apiCall(`/api/admin/roles/${r.id}`,"DELETE"); }} className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50"><Trash2 className="size-3"/></button>}
+                      </div>
                       <p className="text-xs text-gray-400 mb-3">{r.description||"—"}</p>
-                      <div className="flex flex-wrap gap-1">{(r.permissions||[]).slice(0,3).map(perm=><span key={perm} className="text-[9px] bg-[#1A2A52]/8 text-[#1A2A52] px-1.5 py-0.5 rounded font-medium">{perm}</span>)}{(r.permissions||[]).length>3&&<span className="text-[9px] text-gray-400">+{(r.permissions||[]).length-3} more</span>}</div>
+                      <div className="flex flex-wrap gap-1 mb-2">{activeModules.length===0?<span className="text-[9px] text-gray-300">No permissions set</span>:activeModules.map(m=><span key={m} className="text-[9px] bg-[#1A2A52]/8 text-[#1A2A52] px-1.5 py-0.5 rounded font-medium">{m}</span>)}</div>
+                      <p className="text-[10px] text-gray-400">{(r.userRoles||[]).length} member{(r.userRoles||[]).length!==1?"s":""}</p>
                     </div>
-                  ))}
+                  );})}
                 </div>
               )}
             </div>
@@ -348,14 +481,37 @@ export default function AdminPage() {
 
           {tab==="chains"&&(
             <div>
-              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Approval Chains <span className="text-sm font-normal text-gray-400 ml-1">{rules.length} rules</span></h2><button onClick={()=>setModal("rule")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Rule</button></div>
+              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Approval Chains <span className="text-sm font-normal text-gray-400 ml-1">{rules.length} rules</span></h2><button onClick={()=>{ setRuleForm({ name:"", module:"REQUISITION", priority:"10", minAmount:"", maxAmount:"", category:"", department:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager", approverUserIds:[], approverMode:"ANY" }] }); setModal("rule"); }} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Rule</button></div>
+              <p className="text-[11px] text-gray-400 mb-4">Only <b>Requisition</b> rules are enforced today — intake submissions become requisitions, so this covers both. Other modules are labeled for future use.</p>
               {rules.length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No approval rules</div>:(
-                <div className="space-y-3">{rules.map(r=>(
+                <div className="space-y-3">{rules.map(r=>{
+                  const groups: Record<number, RuleStep[]> = {};
+                  (r.steps||[]).forEach(s=>{ (groups[s.sequence] = groups[s.sequence]||[]).push(s); });
+                  const seqs = Object.keys(groups).map(Number).sort((a,b)=>a-b);
+                  return (
                   <div key={r.id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                    <div className="flex items-center gap-3 mb-3"><span className={`size-2 rounded-full shrink-0 ${r.active?"bg-emerald-500":"bg-gray-300"}`}/><p className="text-sm font-semibold text-gray-900 flex-1">{r.name}</p><span className="text-xs text-gray-400">{r.minAmount!=null?`₹${(r.minAmount/100000).toFixed(0)}L`:""}{r.minAmount!=null&&r.maxAmount!=null?" – ":""}{r.maxAmount!=null?`₹${(r.maxAmount/100000).toFixed(0)}L`:r.minAmount!=null?"+":""}</span><button onClick={()=>{ if(confirm("Delete this rule?")) apiCall("/api/admin/approval-rules","DELETE",{id:r.id}); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3.5"/></button></div>
-                    <div className="flex items-center gap-2 flex-wrap">{(r.steps||[]).map((s,i)=>(<div key={s.id} className="flex items-center gap-2"><div className="flex items-center gap-1.5 bg-[#1A2A52]/8 text-[#1A2A52] text-[10px] font-semibold px-2.5 py-1 rounded-lg"><span className="size-4 bg-[#1A2A52] text-white rounded-full text-[8px] flex items-center justify-center font-bold">{s.sequence}</span>{s.stepLabel}</div>{i<(r.steps||[]).length-1&&<ChevronRight className="size-3 text-gray-300"/>}</div>))}</div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`size-2 rounded-full shrink-0 ${r.active?"bg-emerald-500":"bg-gray-300"}`}/>
+                      <p className="text-sm font-semibold text-gray-900 flex-1">{r.name}</p>
+                      <span className="text-[9px] font-semibold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{(r.module||"REQUISITION").replace(/_/g," ")}</span>
+                      <span className="text-xs text-gray-400">{r.minAmount!=null?`₹${(r.minAmount/100000).toFixed(0)}L`:""}{r.minAmount!=null&&r.maxAmount!=null?" – ":""}{r.maxAmount!=null?`₹${(r.maxAmount/100000).toFixed(0)}L`:r.minAmount!=null?"+":""}</span>
+                      <button onClick={()=>{ setEditItem({...r, minAmount: r.minAmount!=null?String(r.minAmount):"", maxAmount: r.maxAmount!=null?String(r.maxAmount):"", steps: (r.steps||[]).map(s=>({...s, approverUserIds: s.approverUserIds||[], approverMode: s.approverMode||"ANY"}))}); setModal("editRule"); }} className="p-1.5 text-gray-400 hover:text-[#1A2A52] rounded-lg hover:bg-gray-100"><Edit2 className="size-3.5"/></button>
+                      <button onClick={()=>{ if(confirm("Delete this rule?")) apiCall("/api/admin/approval-rules","DELETE",{id:r.id}); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3.5"/></button>
+                    </div>
+                    {(r.category||r.department)&&<p className="text-[10px] text-gray-400 mb-2">{r.category&&`Category: ${r.category}`}{r.category&&r.department&&" · "}{r.department&&`Department: ${r.department}`}</p>}
+                    <div className="flex items-center gap-2 flex-wrap">{seqs.map((seq,i)=>{
+                      const grp = groups[seq];
+                      const parallel = grp.length>1;
+                      return (<div key={seq} className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 bg-[#1A2A52]/8 text-[#1A2A52] text-[10px] font-semibold px-2.5 py-1 rounded-lg">
+                          <span className="size-4 bg-[#1A2A52] text-white rounded-full text-[8px] flex items-center justify-center font-bold">{seq}</span>
+                          {parallel?`${grp[0].approverMode==="ALL"?"All of":"Any of"} ${grp.length}: ${grp.map(s=>users.find(u=>u.id===s.approverUserIds[0])?.name||s.stepLabel).join(", ")}`:grp[0].stepLabel}
+                        </div>
+                        {i<seqs.length-1&&<ChevronRight className="size-3 text-gray-300"/>}
+                      </div>);
+                    })}</div>
                   </div>
-                ))}</div>
+                );})}</div>
               )}
             </div>
           )}
@@ -369,11 +525,63 @@ export default function AdminPage() {
             </div>
           )}
 
+          {tab==="commodities"&&(
+            <div>
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-base font-semibold text-gray-900">Commodities <span className="text-sm font-normal text-gray-400 ml-1">{lookups.filter(l=>l.type==="COMMODITY").length} codes</span></h2>
+                <button onClick={()=>{ setCommodityForm({code:"",label:"",parentCode:""}); setModal("commodity"); }} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Top-Level Commodity</button>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-4">Three-level hierarchy — e.g. IT Hardware → Computers → Laptops.</p>
+              {(() => {
+                const commodities = lookups.filter(l=>l.type==="COMMODITY");
+                const level1 = commodities.filter(c=>!c.parentCode);
+                if (level1.length===0) return <div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No commodity codes yet</div>;
+                return <div className="space-y-2">{level1.map(l1=>(
+                  <div key={l1.id} className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50/40" onClick={()=>setExpandedCommodity(expandedCommodity===l1.code?null:l1.code)}>
+                      {expandedCommodity===l1.code?<ChevronDown className="size-4 text-gray-400 shrink-0"/>:<ChevronRight className="size-4 text-gray-400 shrink-0"/>}
+                      <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{l1.code}</span>
+                      <span className="text-sm font-medium text-gray-900 flex-1">{l1.label}</span>
+                      <button onClick={e=>{e.stopPropagation(); setCommodityForm({code:"",label:"",parentCode:l1.code}); setModal("commodity");}} className="text-[10px] font-semibold text-[#1A2A52] hover:underline">+ Add sub-category</button>
+                      <button onClick={e=>{e.stopPropagation(); apiCall("/api/admin/lookups","DELETE",{id:l1.id});}} className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50"><Trash2 className="size-3"/></button>
+                    </div>
+                    {expandedCommodity===l1.code&&(
+                      <div className="border-t border-gray-100 px-4 py-3 bg-gray-50/40 space-y-2">
+                        {commodities.filter(c=>c.parentCode===l1.code).length===0?<p className="text-[10px] text-gray-400 py-1 ml-4">No sub-categories yet</p>:commodities.filter(c=>c.parentCode===l1.code).map(l2=>(
+                          <div key={l2.id} className="bg-white border border-gray-100 rounded-xl overflow-hidden ml-4">
+                            <div className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50" onClick={()=>setExpandedCommodity2(expandedCommodity2===l2.code?null:l2.code)}>
+                              {expandedCommodity2===l2.code?<ChevronDown className="size-3.5 text-gray-400 shrink-0"/>:<ChevronRight className="size-3.5 text-gray-400 shrink-0"/>}
+                              <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{l2.code}</span>
+                              <span className="text-xs font-medium text-gray-800 flex-1">{l2.label}</span>
+                              <button onClick={e=>{e.stopPropagation(); setCommodityForm({code:"",label:"",parentCode:l2.code}); setModal("commodity");}} className="text-[10px] font-semibold text-[#1A2A52] hover:underline">+ Add item</button>
+                              <button onClick={e=>{e.stopPropagation(); apiCall("/api/admin/lookups","DELETE",{id:l2.id});}} className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50"><Trash2 className="size-3"/></button>
+                            </div>
+                            {expandedCommodity2===l2.code&&(
+                              <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/60 space-y-1">
+                                {commodities.filter(c=>c.parentCode===l2.code).length===0?<p className="text-[10px] text-gray-400 py-1 ml-4">No items yet</p>:commodities.filter(c=>c.parentCode===l2.code).map(l3=>(
+                                  <div key={l3.id} className="flex items-center gap-2 px-2 py-1.5 ml-4">
+                                    <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{l3.code}</span>
+                                    <span className="text-xs text-gray-700 flex-1">{l3.label}</span>
+                                    <button onClick={()=>apiCall("/api/admin/lookups","DELETE",{id:l3.id})} className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50"><Trash2 className="size-3"/></button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}</div>;
+              })()}
+            </div>
+          )}
+
           {tab==="lookups"&&(
             <div>
-              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Lookup Values <span className="text-sm font-normal text-gray-400 ml-1">{lookups.length} values</span></h2><div className="flex items-center gap-2"><button onClick={()=>setShowLookupUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button><button onClick={()=>setModal("lookup")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Value</button></div></div>
-              {lookups.length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No lookups</div>:(
-                <div className="space-y-4">{[...new Set(lookups.map(l=>l.type))].map(type=>(<div key={type}><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{type.replace(/_/g," ")}</p><div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">{lookups.filter(l=>l.type===type).map(l=>(<div key={l.id} className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/40"><span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded w-20 text-center">{l.code}</span><span className="text-sm text-gray-800 flex-1">{l.label}</span><button onClick={()=>{ if(confirm("Delete this lookup?")) apiCall("/api/admin/lookups","DELETE",{id:l.id}); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3"/></button></div>))}</div></div>))}</div>
+              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Lookup Values <span className="text-sm font-normal text-gray-400 ml-1">{lookups.filter(l=>l.type!=="COMMODITY").length} values</span></h2><div className="flex items-center gap-2"><button onClick={()=>setShowLookupUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button><button onClick={()=>setModal("lookup")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Value</button></div></div>
+              {lookups.filter(l=>l.type!=="COMMODITY").length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No lookups</div>:(
+                <div className="space-y-4">{[...new Set(lookups.filter(l=>l.type!=="COMMODITY").map(l=>l.type))].map(type=>(<div key={type}><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{type.replace(/_/g," ")}</p><div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">{lookups.filter(l=>l.type===type).map(l=>(<div key={l.id} className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/40"><span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded w-20 text-center">{l.code}</span><span className="text-sm text-gray-800 flex-1">{l.label}</span><button onClick={()=>{ if(confirm("Delete this lookup?")) apiCall("/api/admin/lookups","DELETE",{id:l.id}); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3"/></button></div>))}</div></div>))}</div>
               )}
             </div>
           )}
@@ -386,7 +594,11 @@ export default function AdminPage() {
               ):(
                 <div className="space-y-4">{coas.map(c=>(
                   <div key={c.id} className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm">
-                    <div className="flex items-center gap-4 mb-6"><div className="size-12 bg-[#1A2A52]/8 rounded-xl flex items-center justify-center"><BarChart2 className="size-6 text-[#1A2A52]"/></div><div><p className="text-base font-bold text-gray-900">{c.code} — {c.name}</p><p className="text-xs text-gray-400 mt-0.5">{[c.taxType, c.companyCode?`Company Code: ${c.companyCode}`:null, `Currency: ${c.currency}`].filter(Boolean).join(" · ")}</p></div></div>
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="size-12 bg-[#1A2A52]/8 rounded-xl flex items-center justify-center"><BarChart2 className="size-6 text-[#1A2A52]"/></div>
+                      <div className="flex-1"><p className="text-base font-bold text-gray-900">{c.code} — {c.name}</p><p className="text-xs text-gray-400 mt-0.5">{[c.taxType, c.companyCode?`Company Code: ${c.companyCode}`:null, `Currency: ${c.currency}`].filter(Boolean).join(" · ")}</p></div>
+                      {c.segments.length<5&&<button onClick={()=>{ setSegmentForm({coaId:c.id,position:c.segments.length+1,name:"",description:"",isRequired:false,linkedLookupType:""}); setModal("segment"); }} className="flex items-center gap-1 text-[10px] font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-2.5 py-1.5 rounded-lg hover:bg-[#1A2A52]/5"><Plus className="size-3"/>Add Segment</button>}
+                    </div>
                     {c.segments.length===0?<p className="text-xs text-gray-400">No segments configured</p>:(
                       <div className="grid grid-cols-4 gap-3">{c.segments.map(seg=>(<div key={seg.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100"><div className="size-6 bg-[#1A2A52] text-white rounded-full text-xs flex items-center justify-center font-bold mb-2">{seg.position}</div><p className="text-xs font-semibold text-gray-900">{seg.name}</p><p className="text-[10px] text-gray-400 mt-0.5">{seg.linkedLookupType?`Linked to ${seg.linkedLookupType.replace(/_/g," ")}`:(seg.description||"—")}</p></div>))}</div>
                     )}
@@ -488,19 +700,178 @@ export default function AdminPage() {
         </>}
       </div>
 
-      {modal==="user"&&<Modal title="Invite New User" onClose={()=>{ setModal(null); setError(""); }}><Input label="Full Name *" value={userForm.name} onChange={v=>setUserForm(f=>({...f,name:v}))} placeholder="e.g. Rajesh Kumar"/><Input label="Email *" value={userForm.email} onChange={v=>setUserForm(f=>({...f,email:v}))} placeholder="rajesh@company.com" type="email"/><Sel label="Role *" value={userForm.role} onChange={v=>setUserForm(f=>({...f,role:v}))} options={ROLES_LIST}/><Sel label="Department" value={userForm.department} onChange={v=>setUserForm(f=>({...f,department:v}))} options={DEPTS}/><Input label="Job Title" value={userForm.jobTitle} onChange={v=>setUserForm(f=>({...f,jobTitle:v}))} placeholder="e.g. Procurement Manager"/><div className="flex gap-3 pt-2"><button onClick={createUser} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Send Invite"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
+      {modal==="user"&&<Modal title="Invite New User" onClose={()=>{ setModal(null); setError(""); }}>
+        <Input label="Full Name *" value={userForm.name} onChange={v=>setUserForm(f=>({...f,name:v}))} placeholder="e.g. Rajesh Kumar"/>
+        <Input label="Email *" value={userForm.email} onChange={v=>setUserForm(f=>({...f,email:v}))} placeholder="rajesh@company.com" type="email"/>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Employee ID" value={userForm.employeeId} onChange={v=>setUserForm(f=>({...f,employeeId:v}))} placeholder="e.g. EMP-1042"/>
+          <Input label="Job Title" value={userForm.jobTitle} onChange={v=>setUserForm(f=>({...f,jobTitle:v}))} placeholder="e.g. Procurement Manager"/>
+        </div>
+        <Sel label="Role *" value={userForm.role} onChange={v=>setUserForm(f=>({...f,role:v}))} options={ROLES_LIST}/>
+        <div className="grid grid-cols-2 gap-3">
+          <Sel label="Department" value={userForm.department} onChange={v=>setUserForm(f=>({...f,department:v}))} options={DEPTS}/>
+          <UserSel label="Line Manager" value={userForm.managerId} onChange={v=>setUserForm(f=>({...f,managerId:v}))} users={users}/>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Business Unit" value={userForm.businessUnit} onChange={v=>setUserForm(f=>({...f,businessUnit:v}))} placeholder="Optional"/>
+          <Input label="Cost Center" value={userForm.costCenter} onChange={v=>setUserForm(f=>({...f,costCenter:v}))} placeholder="Optional"/>
+        </div>
+        <Input label="Default Address" value={userForm.addressLine1} onChange={v=>setUserForm(f=>({...f,addressLine1:v}))} placeholder="Street address (optional)"/>
+        <div className="grid grid-cols-3 gap-3">
+          <Input label="City" value={userForm.city} onChange={v=>setUserForm(f=>({...f,city:v}))} placeholder="Optional"/>
+          <Input label="State" value={userForm.state} onChange={v=>setUserForm(f=>({...f,state:v}))} placeholder="Optional"/>
+          <Input label="Postal Code" value={userForm.postalCode} onChange={v=>setUserForm(f=>({...f,postalCode:v}))} placeholder="Optional"/>
+        </div>
+        <Input label="Country" value={userForm.country} onChange={v=>setUserForm(f=>({...f,country:v}))} placeholder="Optional"/>
+        <MultiSel label="Content Groups" selected={userForm.contentGroupIds} onChange={v=>setUserForm(f=>({...f,contentGroupIds:v}))} options={groups.map(g=>({id:g.id,name:g.name}))}/>
+        <MultiSel label="Roles (permissions)" selected={userForm.workspaceRoleIds} onChange={v=>setUserForm(f=>({...f,workspaceRoleIds:v}))} options={roles.map(r=>({id:r.id,name:r.name}))}/>
+        <div className="flex gap-3 pt-2"><button onClick={createUser} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Send Invite"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
 
-      {modal==="editUser"&&editItem&&<Modal title="Edit User" onClose={()=>{ setModal(null); setEditItem(null); setError(""); }}><Input label="Full Name" value={editItem.name||""} onChange={v=>setEditItem((p:any)=>({...p,name:v}))} placeholder="Full name"/><Sel label="Role" value={editItem.role||""} onChange={v=>setEditItem((p:any)=>({...p,role:v}))} options={ROLES_LIST}/><Sel label="Department" value={editItem.department||""} onChange={v=>setEditItem((p:any)=>({...p,department:v}))} options={DEPTS}/><Input label="Job Title" value={editItem.jobTitle||""} onChange={v=>setEditItem((p:any)=>({...p,jobTitle:v}))} placeholder="Job title"/><Sel label="Status" value={editItem.inviteStatus||""} onChange={v=>setEditItem((p:any)=>({...p,inviteStatus:v}))} options={["ACTIVE","PENDING","INACTIVE"]}/><div className="flex gap-3 pt-2"><button onClick={()=>apiCall(`/api/admin/users/${editItem.id}`,"PATCH",editItem)} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Save Changes"}</button><button onClick={()=>{ setModal(null); setEditItem(null); }} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
+      {modal==="editUser"&&editItem&&<Modal title="Edit User" onClose={()=>{ setModal(null); setEditItem(null); setError(""); }}>
+        <Input label="Full Name" value={editItem.name||""} onChange={v=>setEditItem((p:any)=>({...p,name:v}))} placeholder="Full name"/>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Employee ID" value={editItem.employeeId||""} onChange={v=>setEditItem((p:any)=>({...p,employeeId:v}))} placeholder="e.g. EMP-1042"/>
+          <Input label="Job Title" value={editItem.jobTitle||""} onChange={v=>setEditItem((p:any)=>({...p,jobTitle:v}))} placeholder="Job title"/>
+        </div>
+        <Sel label="Role" value={editItem.role||""} onChange={v=>setEditItem((p:any)=>({...p,role:v}))} options={ROLES_LIST}/>
+        <div className="grid grid-cols-2 gap-3">
+          <Sel label="Department" value={editItem.department||""} onChange={v=>setEditItem((p:any)=>({...p,department:v}))} options={DEPTS}/>
+          <UserSel label="Line Manager" value={editItem.managerId||""} onChange={v=>setEditItem((p:any)=>({...p,managerId:v}))} users={users.filter(u=>u.id!==editItem.id)}/>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Business Unit" value={editItem.businessUnit||""} onChange={v=>setEditItem((p:any)=>({...p,businessUnit:v}))} placeholder="Optional"/>
+          <Input label="Cost Center" value={editItem.costCenter||""} onChange={v=>setEditItem((p:any)=>({...p,costCenter:v}))} placeholder="Optional"/>
+        </div>
+        <Input label="Default Address" value={editItem.addressLine1||""} onChange={v=>setEditItem((p:any)=>({...p,addressLine1:v}))} placeholder="Street address (optional)"/>
+        <div className="grid grid-cols-3 gap-3">
+          <Input label="City" value={editItem.city||""} onChange={v=>setEditItem((p:any)=>({...p,city:v}))} placeholder="Optional"/>
+          <Input label="State" value={editItem.state||""} onChange={v=>setEditItem((p:any)=>({...p,state:v}))} placeholder="Optional"/>
+          <Input label="Postal Code" value={editItem.postalCode||""} onChange={v=>setEditItem((p:any)=>({...p,postalCode:v}))} placeholder="Optional"/>
+        </div>
+        <Input label="Country" value={editItem.country||""} onChange={v=>setEditItem((p:any)=>({...p,country:v}))} placeholder="Optional"/>
+        <Sel label="Status" value={editItem.inviteStatus||""} onChange={v=>setEditItem((p:any)=>({...p,inviteStatus:v}))} options={["ACTIVE","PENDING","INACTIVE"]}/>
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Content Groups</label>
+          <div className="flex flex-wrap gap-1.5">
+            {(editItem.contentGroupMembers||[]).map((m:any)=>(
+              <span key={m.contentGroup.id} className="flex items-center gap-1 text-[10px] bg-[#1A2A52]/8 text-[#1A2A52] px-2 py-1 rounded-lg font-medium">
+                {m.contentGroup.name}
+                <button onClick={async()=>{ await fetch(`/api/admin/users/${editItem.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({removeContentGroupId:m.contentGroup.id})}); const u=await (await fetch("/api/admin/users")).json(); setEditItem(u.users.find((x:any)=>x.id===editItem.id)); await loadAll(); }} className="hover:text-red-500"><X className="size-2.5"/></button>
+              </span>
+            ))}
+          </div>
+          <select onChange={async e=>{ if(!e.target.value)return; await fetch(`/api/admin/users/${editItem.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({addContentGroupId:e.target.value})}); const u=await (await fetch("/api/admin/users")).json(); setEditItem(u.users.find((x:any)=>x.id===editItem.id)); await loadAll(); e.target.value=""; }} className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#1A2A52]">
+            <option value="">+ Add to content group...</option>
+            {groups.filter(g=>!(editItem.contentGroupMembers||[]).some((m:any)=>m.contentGroup.id===g.id)).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Roles (permissions)</label>
+          <div className="flex flex-wrap gap-1.5">
+            {(editItem.userRoles||[]).map((m:any)=>(
+              <span key={m.role.id} className="flex items-center gap-1 text-[10px] bg-[#1A2A52]/8 text-[#1A2A52] px-2 py-1 rounded-lg font-medium">
+                {m.role.name}
+                <button onClick={async()=>{ await fetch(`/api/admin/users/${editItem.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({removeWorkspaceRoleId:m.role.id})}); const u=await (await fetch("/api/admin/users")).json(); setEditItem(u.users.find((x:any)=>x.id===editItem.id)); await loadAll(); }} className="hover:text-red-500"><X className="size-2.5"/></button>
+              </span>
+            ))}
+          </div>
+          <select onChange={async e=>{ if(!e.target.value)return; await fetch(`/api/admin/users/${editItem.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({addWorkspaceRoleId:e.target.value})}); const u=await (await fetch("/api/admin/users")).json(); setEditItem(u.users.find((x:any)=>x.id===editItem.id)); await loadAll(); e.target.value=""; }} className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#1A2A52]">
+            <option value="">+ Assign role...</option>
+            {roles.filter(r=>!(editItem.userRoles||[]).some((m:any)=>m.role.id===r.id)).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-3 pt-2"><button onClick={()=>apiCall(`/api/admin/users/${editItem.id}`,"PATCH",editItem)} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Save Changes"}</button><button onClick={()=>{ setModal(null); setEditItem(null); }} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
 
-      {modal==="rule"&&<Modal title="Add Approval Rule" onClose={()=>{ setModal(null); setError(""); }}><Input label="Rule Name *" value={ruleForm.name} onChange={v=>setRuleForm(f=>({...f,name:v}))} placeholder="e.g. Above 10 Lakh — Full Approval"/><div className="grid grid-cols-2 gap-3"><Input label="Min Amount (Rs)" value={ruleForm.minAmount} onChange={v=>setRuleForm(f=>({...f,minAmount:v}))} placeholder="0" type="number"/><Input label="Max Amount (Rs)" value={ruleForm.maxAmount} onChange={v=>setRuleForm(f=>({...f,maxAmount:v}))} placeholder="Leave blank for no limit" type="number"/></div><Input label="Priority" value={ruleForm.priority} onChange={v=>setRuleForm(f=>({...f,priority:v}))} placeholder="10" type="number"/><div><label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Approval Steps</label><div className="space-y-2">{ruleForm.steps.map((step,i)=>(<div key={i} className="flex items-center gap-2"><span className="size-5 bg-[#1A2A52] text-white rounded-full text-[10px] flex items-center justify-center font-bold shrink-0">{i+1}</span><select value={step.stepType} onChange={e=>{ const s=[...ruleForm.steps]; s[i]={...s[i],stepType:e.target.value}; setRuleForm(f=>({...f,steps:s})); }} className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]">{STEP_TYPES.map(t=><option key={t}>{t}</option>)}</select><input value={step.stepLabel} onChange={e=>{ const s=[...ruleForm.steps]; s[i]={...s[i],stepLabel:e.target.value}; setRuleForm(f=>({...f,steps:s})); }} className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]" placeholder="Step label"/>{i>0&&<button onClick={()=>setRuleForm(f=>({...f,steps:f.steps.filter((_:any,j:number)=>j!==i)}))} className="text-gray-400 hover:text-red-500"><X className="size-3.5"/></button>}</div>))}</div><button onClick={()=>setRuleForm(f=>({...f,steps:[...f.steps,{sequence:f.steps.length+1,stepType:"FINANCE",stepLabel:"Finance Sign-off"}]}))} className="mt-2 flex items-center gap-1 text-xs text-[#1A2A52] font-semibold hover:underline"><Plus className="size-3"/>Add Step</button></div><div className="flex gap-3 pt-2"><button onClick={createRule} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Rule"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
+      {modal==="rule"&&<Modal title="Add Approval Rule" onClose={()=>{ setModal(null); setError(""); }}>
+        <Input label="Rule Name *" value={ruleForm.name} onChange={v=>setRuleForm(f=>({...f,name:v}))} placeholder="e.g. Above 10 Lakh — Full Approval"/>
+        <Sel label="Applies To" value={ruleForm.module} onChange={v=>setRuleForm(f=>({...f,module:v}))} options={APPROVAL_MODULES}/>
+        <div className="grid grid-cols-2 gap-3">
+          <Sel label="Category (optional)" value={ruleForm.category} onChange={v=>setRuleForm(f=>({...f,category:v}))} options={[...new Set(lookups.filter(l=>l.type==="CATEGORY").map(l=>l.label))]}/>
+          <Sel label="Department (optional)" value={ruleForm.department} onChange={v=>setRuleForm(f=>({...f,department:v}))} options={DEPTS}/>
+        </div>
+        <div className="grid grid-cols-2 gap-3"><Input label="Min Amount (Rs)" value={ruleForm.minAmount} onChange={v=>setRuleForm(f=>({...f,minAmount:v}))} placeholder="0" type="number"/><Input label="Max Amount (Rs)" value={ruleForm.maxAmount} onChange={v=>setRuleForm(f=>({...f,maxAmount:v}))} placeholder="Leave blank for no limit" type="number"/></div>
+        <Input label="Priority" value={ruleForm.priority} onChange={v=>setRuleForm(f=>({...f,priority:v}))} placeholder="10" type="number"/>
+        <StepEditor steps={ruleForm.steps} setSteps={fn=>setRuleForm(f=>({...f,steps:fn(f.steps)}))} users={users.map(u=>({id:u.id,name:u.name}))}/>
+        <div className="flex gap-3 pt-2"><button onClick={createRule} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Rule"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
 
-      {modal==="lookup"&&<Modal title="Add Lookup Value" onClose={()=>{ setModal(null); setError(""); }}><Sel label="Type *" value={lookupForm.type} onChange={v=>setLookupForm(f=>({...f,type:v}))} options={LOOKUP_TYPES}/><Input label="Code *" value={lookupForm.code} onChange={v=>setLookupForm(f=>({...f,code:v.toUpperCase()}))} placeholder="e.g. ENG or 6100"/><Input label="Label *" value={lookupForm.label} onChange={v=>setLookupForm(f=>({...f,label:v}))} placeholder="e.g. Engineering"/><div className="flex gap-3 pt-2"><button onClick={createLookup} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Add Value"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
+      {modal==="editRule"&&editItem&&<Modal title="Edit Approval Rule" onClose={()=>{ setModal(null); setEditItem(null); setError(""); }}>
+        <Input label="Rule Name" value={editItem.name||""} onChange={v=>setEditItem((p:any)=>({...p,name:v}))} placeholder="Rule name"/>
+        <Sel label="Applies To" value={editItem.module||"REQUISITION"} onChange={v=>setEditItem((p:any)=>({...p,module:v}))} options={APPROVAL_MODULES}/>
+        <div className="grid grid-cols-2 gap-3">
+          <Sel label="Category (optional)" value={editItem.category||""} onChange={v=>setEditItem((p:any)=>({...p,category:v}))} options={[...new Set(lookups.filter(l=>l.type==="CATEGORY").map(l=>l.label))]}/>
+          <Sel label="Department (optional)" value={editItem.department||""} onChange={v=>setEditItem((p:any)=>({...p,department:v}))} options={DEPTS}/>
+        </div>
+        <div className="grid grid-cols-2 gap-3"><Input label="Min Amount (Rs)" value={editItem.minAmount||""} onChange={v=>setEditItem((p:any)=>({...p,minAmount:v}))} placeholder="0" type="number"/><Input label="Max Amount (Rs)" value={editItem.maxAmount||""} onChange={v=>setEditItem((p:any)=>({...p,maxAmount:v}))} placeholder="Leave blank for no limit" type="number"/></div>
+        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editItem.active} onChange={e=>setEditItem((p:any)=>({...p,active:e.target.checked}))} className="size-4 accent-[#1A2A52]"/><span className="text-sm text-gray-700 font-medium">Active</span></label>
+        <StepEditor steps={editItem.steps||[]} setSteps={fn=>setEditItem((p:any)=>({...p,steps:fn(p.steps||[])}))} users={users.map(u=>({id:u.id,name:u.name}))}/>
+        <div className="flex gap-3 pt-2"><button onClick={()=>apiCall(`/api/admin/approval-rules/${editItem.id}`,"PATCH",{name:editItem.name,module:editItem.module,category:editItem.category||null,department:editItem.department||null,active:editItem.active,minAmount:editItem.minAmount?parseFloat(editItem.minAmount):null,maxAmount:editItem.maxAmount?parseFloat(editItem.maxAmount):null,steps:(editItem.steps||[]).map((s:any,i:number)=>({sequence:i+1,stepType:s.stepType,stepLabel:s.stepLabel,approverUserIds:s.approverUserIds,approverMode:s.approverMode}))})} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Save Changes"}</button><button onClick={()=>{ setModal(null); setEditItem(null); }} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
+
+      {modal==="lookup"&&<Modal title="Add Lookup Value" onClose={()=>{ setModal(null); setError(""); }}>
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Type * <span className="font-normal normal-case text-gray-400">(pick existing or type a new one)</span></label>
+          <input list="lookupTypeOptions" value={lookupForm.type} onChange={e=>setLookupForm(f=>({...f,type:e.target.value.toUpperCase().replace(/\s+/g,"_")}))} placeholder="e.g. SHIPPING_METHOD"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1A2A52] focus:ring-1 focus:ring-[#1A2A52]/20"/>
+          <datalist id="lookupTypeOptions">
+            {[...new Set([...LOOKUP_TYPES, ...lookups.map(l=>l.type).filter(t=>t!=="COMMODITY")])].map(t=><option key={t} value={t}/>)}
+          </datalist>
+        </div>
+        <Input label="Code *" value={lookupForm.code} onChange={v=>setLookupForm(f=>({...f,code:v.toUpperCase()}))} placeholder="e.g. ENG or 6100"/>
+        <Input label="Label *" value={lookupForm.label} onChange={v=>setLookupForm(f=>({...f,label:v}))} placeholder="e.g. Engineering"/>
+        <div className="flex gap-3 pt-2"><button onClick={createLookup} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Add Value"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
+
+      {modal==="commodity"&&<Modal title={commodityForm.parentCode?`Add under ${commodityForm.parentCode}`:"Add Top-Level Commodity"} onClose={()=>{ setModal(null); setError(""); }}>
+        <Input label="Code *" value={commodityForm.code} onChange={v=>setCommodityForm(f=>({...f,code:v.toUpperCase()}))} placeholder="e.g. IT-HW"/>
+        <Input label="Label *" value={commodityForm.label} onChange={v=>setCommodityForm(f=>({...f,label:v}))} placeholder="e.g. IT Hardware"/>
+        <div className="flex gap-3 pt-2"><button onClick={createCommodity} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Add"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
 
       {modal==="field"&&<Modal title="Add Custom Field" onClose={()=>{ setModal(null); setError(""); }}><Sel label="Entity *" value={fieldForm.entity} onChange={v=>setFieldForm(f=>({...f,entity:v}))} options={MODULES}/><Input label="Display Name *" value={fieldForm.name} onChange={v=>setFieldForm(f=>({...f,name:v}))} placeholder="e.g. Asset Tag"/><Sel label="Field Type *" value={fieldForm.fieldType} onChange={v=>setFieldForm(f=>({...f,fieldType:v}))} options={FIELD_TYPES}/><Input label="Help text" value={fieldForm.helpText} onChange={v=>setFieldForm(f=>({...f,helpText:v}))} placeholder="Optional helper text shown under the field"/>{fieldForm.fieldType==="DROPDOWN"&&<Input label="Options (comma separated)" value={fieldForm.options} onChange={v=>setFieldForm(f=>({...f,options:v}))} placeholder="Option A, Option B, Option C"/>}{fieldForm.entity==="REQUISITION"&&<div><label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Categories (leave empty to apply to all categories)</label><div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto border border-gray-200 rounded-xl p-2">{lookups.filter(l=>l.type==="CATEGORY").length===0?<span className="text-xs text-gray-400 px-1 py-0.5">No categories configured yet — add some under Lookups first</span>:lookups.filter(l=>l.type==="CATEGORY").map(c=>(<label key={c.code} className="flex items-center gap-1.5 text-xs bg-gray-50 px-2 py-1 rounded-lg cursor-pointer"><input type="checkbox" checked={fieldForm.categories.includes(c.label)} onChange={e=>setFieldForm(f=>({...f,categories:e.target.checked?[...f.categories,c.label]:f.categories.filter(x=>x!==c.label)}))}/>{c.label}</label>))}</div></div>}<label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={fieldForm.required} onChange={e=>setFieldForm(f=>({...f,required:e.target.checked}))} className="size-4 accent-[#1A2A52]"/><span className="text-sm text-gray-700 font-medium">Required field</span></label><div className="flex gap-3 pt-2"><button onClick={createField} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Add Field"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
 
       {modal==="group"&&<Modal title="Add Content Group" onClose={()=>{ setModal(null); setError(""); }}><Input label="Group Name *" value={groupForm.name} onChange={v=>setGroupForm(f=>({...f,name:v}))} placeholder="e.g. IT and Engineering"/><Input label="Description" value={groupForm.description} onChange={v=>setGroupForm(f=>({...f,description:v}))} placeholder="What this group covers"/><div><label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Color</label><input type="color" value={groupForm.color} onChange={e=>setGroupForm(f=>({...f,color:e.target.value}))} className="h-9 w-20 border border-gray-200 rounded-lg cursor-pointer"/></div><div className="flex gap-3 pt-2"><button onClick={createGroup} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Group"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
 
+      {modal==="role"&&<Modal title="Add Role" onClose={()=>{ setModal(null); setError(""); }}>
+        <Input label="Role Name *" value={roleForm.name} onChange={v=>setRoleForm(f=>({...f,name:v}))} placeholder="e.g. Regional Procurement Manager"/>
+        <Input label="Description" value={roleForm.description} onChange={v=>setRoleForm(f=>({...f,description:v}))} placeholder="What this role is for"/>
+        <PermMatrix value={roleForm.permissions} onChange={v=>setRoleForm(f=>({...f,permissions:v}))}/>
+        <div className="flex gap-3 pt-2"><button onClick={createRole} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Role"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
+
+      {modal==="editRole"&&editItem&&<Modal title="Edit Role" onClose={()=>{ setModal(null); setEditItem(null); setError(""); }}>
+        <Input label="Role Name" value={editItem.name||""} onChange={v=>setEditItem((p:any)=>({...p,name:v}))} placeholder="Role name" />
+        <Input label="Description" value={editItem.description||""} onChange={v=>setEditItem((p:any)=>({...p,description:v}))} placeholder="What this role is for"/>
+        <PermMatrix value={editItem.permissions||{}} onChange={v=>setEditItem((p:any)=>({...p,permissions:v}))}/>
+        <div>
+          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Members</label>
+          <div className="flex flex-wrap gap-1.5">
+            {(editItem.userRoles||[]).map((m:any)=>(
+              <span key={m.user.id} className="flex items-center gap-1 text-[10px] bg-[#1A2A52]/8 text-[#1A2A52] px-2 py-1 rounded-lg font-medium">
+                {m.user.name}
+                <button onClick={async()=>{ await fetch(`/api/admin/roles/${editItem.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({removeUserId:m.user.id})}); const d=await (await fetch("/api/admin/roles")).json(); setEditItem(d.roles.find((x:any)=>x.id===editItem.id)); await loadAll(); }} className="hover:text-red-500"><X className="size-2.5"/></button>
+              </span>
+            ))}
+          </div>
+          <select onChange={async e=>{ if(!e.target.value)return; await fetch(`/api/admin/roles/${editItem.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({addUserId:e.target.value})}); const d=await (await fetch("/api/admin/roles")).json(); setEditItem(d.roles.find((x:any)=>x.id===editItem.id)); await loadAll(); e.target.value=""; }} className="mt-1.5 w-full border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-[#1A2A52]">
+            <option value="">+ Add member...</option>
+            {users.filter(u=>!(editItem.userRoles||[]).some((m:any)=>m.user.id===u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-3 pt-2"><button onClick={()=>apiCall(`/api/admin/roles/${editItem.id}`,"PATCH",{name:editItem.name,description:editItem.description,permissions:editItem.permissions})} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Save Changes"}</button><button onClick={()=>{ setModal(null); setEditItem(null); }} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
+
       {modal==="coa"&&<Modal title="Add Chart of Accounts" onClose={()=>{ setModal(null); setError(""); }}><Input label="Name *" value={coaForm.name} onChange={v=>setCoaForm(f=>({...f,name:v}))} placeholder="e.g. India Operations COA"/><Input label="Code *" value={coaForm.code} onChange={v=>setCoaForm(f=>({...f,code:v.toUpperCase()}))} placeholder="e.g. IN01"/><div className="grid grid-cols-2 gap-3"><Input label="Company Code" value={coaForm.companyCode} onChange={v=>setCoaForm(f=>({...f,companyCode:v}))} placeholder="e.g. ORG-IN"/><Input label="Currency" value={coaForm.currency} onChange={v=>setCoaForm(f=>({...f,currency:v.toUpperCase()}))} placeholder="INR"/></div><div className="grid grid-cols-2 gap-3"><Input label="Tax Type" value={coaForm.taxType} onChange={v=>setCoaForm(f=>({...f,taxType:v}))} placeholder="e.g. GST"/><Input label="Tax Reg. Number" value={coaForm.taxRegNumber} onChange={v=>setCoaForm(f=>({...f,taxRegNumber:v}))} placeholder="Optional"/></div><div className="grid grid-cols-2 gap-3"><Input label="Billing City" value={coaForm.billingCity} onChange={v=>setCoaForm(f=>({...f,billingCity:v}))} placeholder="Optional"/><Input label="Billing Country" value={coaForm.billingCountry} onChange={v=>setCoaForm(f=>({...f,billingCountry:v}))} placeholder="Optional"/></div><div className="flex gap-3 pt-2"><button onClick={createCoa} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create COA"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
+
+      {modal==="segment"&&<Modal title={`Add Segment ${segmentForm.position}`} onClose={()=>{ setModal(null); setError(""); }}>
+        <Input label="Segment Name *" value={segmentForm.name} onChange={v=>setSegmentForm(f=>({...f,name:v}))} placeholder="e.g. Cost Center"/>
+        <Input label="Description" value={segmentForm.description} onChange={v=>setSegmentForm(f=>({...f,description:v}))} placeholder="Optional"/>
+        <Sel label="Linked Lookup Type (optional)" value={segmentForm.linkedLookupType} onChange={v=>setSegmentForm(f=>({...f,linkedLookupType:v}))} options={[...new Set(lookups.filter(l=>l.type!=="COMMODITY").map(l=>l.type))]}/>
+        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={segmentForm.isRequired} onChange={e=>setSegmentForm(f=>({...f,isRequired:e.target.checked}))} className="size-4 accent-[#1A2A52]"/><span className="text-sm text-gray-700 font-medium">Required on every requisition</span></label>
+        <div className="flex gap-3 pt-2"><button onClick={createSegment} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Add Segment"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
 
       {modal==="catalog"&&<Modal title="Add Catalog" onClose={()=>{ setModal(null); setError(""); }}>
         <Sel label="Type *" value={catalogForm.type} onChange={v=>setCatalogForm(f=>({...f,type:v}))} options={["HOSTED","PUNCHOUT"]}/>

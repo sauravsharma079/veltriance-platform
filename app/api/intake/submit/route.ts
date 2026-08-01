@@ -190,14 +190,25 @@ export async function POST(req: NextRequest) {
           })),
         },
         approvalSteps: {
-          create: approvalSteps.map((step, i) => ({
-            stepType: step.stepType,
-            stepLabel: step.stepLabel,
-            sequence: i + 1,
-            approverId: step.stepType === ApprovalStepType.MANAGER
-              ? (step.assignedUserId ?? profile.managerId)
-              : step.assignedUserId,
-          })),
+          // A step with approverUserIds becomes a parallel group: multiple ApprovalStep
+          // rows sharing the same sequence number, one per named approver. See
+          // ApprovalStep.approverMode in schema.prisma for how the group resolves.
+          create: approvalSteps.flatMap((step, i) => {
+            const sequence = i + 1;
+            if (step.approverUserIds.length > 0) {
+              return step.approverUserIds.map(uid => ({
+                stepType: step.stepType, stepLabel: step.stepLabel, sequence,
+                approverId: uid, approverMode: step.approverMode,
+              }));
+            }
+            return [{
+              stepType: step.stepType, stepLabel: step.stepLabel, sequence,
+              approverId: step.stepType === ApprovalStepType.MANAGER
+                ? (step.assignedUserId ?? profile.managerId)
+                : step.assignedUserId,
+              approverMode: step.approverMode,
+            }];
+          }),
         },
       },
       include: { lineItems: true, approvalSteps: true },

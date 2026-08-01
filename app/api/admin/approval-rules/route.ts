@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
         organizationId: admin.organizationId,
         name: body.name, priority: body.priority || 10,
         active: body.active ?? true,
+        module: body.module || "REQUISITION",
+        category: body.category || null,
+        department: body.department || null,
         minAmount: body.minAmount || null,
         maxAmount: body.maxAmount || null,
       },
@@ -48,10 +51,14 @@ export async function POST(req: NextRequest) {
         data: body.steps.map((s: any) => ({
           ruleId: rule.id, sequence: s.sequence,
           stepType: s.stepType, stepLabel: s.stepLabel,
+          assignedUserId: s.assignedUserId || null,
+          approverUserIds: Array.isArray(s.approverUserIds) ? s.approverUserIds : [],
+          approverMode: s.approverMode === "ALL" ? "ALL" : "ANY",
         })),
       });
     }
-    return NextResponse.json({ rule }, { status: 201 });
+    const full = await prisma.approvalRule.findUnique({ where: { id: rule.id }, include: { steps: true } });
+    return NextResponse.json({ rule: full }, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

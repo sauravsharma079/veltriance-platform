@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin();
     if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    const { type, code, label } = await req.json();
+    const { type, code, label, parentCode } = await req.json();
     if (!type || !code || !label) return NextResponse.json({ error: "type, code, label required" }, { status: 400 });
     const count = await prisma.lookup.count({ where: { organizationId: admin.organizationId, type } });
-    const lookup = await prisma.lookup.create({ data: { organizationId: admin.organizationId, type, code: code.toUpperCase(), label, sortOrder: count + 1, active: true } });
+    const lookup = await prisma.lookup.create({ data: { organizationId: admin.organizationId, type, code: code.toUpperCase(), label, parentCode: parentCode || null, sortOrder: count + 1, active: true } });
     return NextResponse.json({ lookup }, { status: 201 });
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
 }

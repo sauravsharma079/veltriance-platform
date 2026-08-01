@@ -11,7 +11,7 @@ type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: str
 type Item = { id: string; [k: string]: unknown };
 type Mode = "idle" | "create" | "edit";
 
-type CreateKind = "user" | "role" | "group" | "lookup" | "coa" | "approval" | "field" | "catalog";
+type CreateKind = "user" | "role" | "group" | "lookup" | "coa" | "approval" | "field" | "catalog" | "commodity";
 type EditKind = "user" | "role" | "group" | "lookup" | "approval" | "field" | "catalog";
 
 interface CreateState {
@@ -52,6 +52,7 @@ const CREATE_ACTIONS: { label: string; kind: CreateKind; desc: string }[] = [
   { label: "Build approval chain", kind: "approval", desc: "Conditions + multi-step routing" },
   { label: "Add custom field",     kind: "field",    desc: "Extend forms" },
   { label: "Create catalog or punchout", kind: "catalog", desc: "Hosted catalog with items, or a punchout connection" },
+  { label: "Add commodity code", kind: "commodity", desc: "3-level hierarchy: category → sub-category → item" },
 ];
 
 const EDIT_ACTIONS: { label: string; kind: EditKind; desc: string }[] = [
@@ -67,6 +68,7 @@ const EDIT_ACTIONS: { label: string; kind: EditKind; desc: string }[] = [
 const CREATE_FIRST_STEP: Record<CreateKind, string> = {
   user: "name", role: "name", group: "name", lookup: "type_name",
   coa: "name", approval: "name", field: "entity", catalog: "catalog_type",
+  commodity: "level",
 };
 
 const FALLBACK_CATEGORIES = [
@@ -341,21 +343,28 @@ async function addLookupValues(typeName: string, raw: string): Promise<{ ok: boo
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function createUser(data: Record<string,string>, sendInvite: boolean): Promise<{ ok: boolean; error?: string }> {
-  const [rolesRes, groupsRes, coasRes] = await Promise.all([
+  const [rolesRes, groupsRes, coasRes, usersRes] = await Promise.all([
     fetch("/api/admin/roles").then(r => r.json()),
     fetch("/api/admin/content-groups").then(r => r.json()),
     fetch("/api/admin/coa").then(r => r.json()),
+    fetch("/api/admin/users").then(r => r.json()),
   ]);
   const allRoles: Item[]  = rolesRes.roles ?? [];
   const allGroups: Item[] = groupsRes.groups ?? [];
   const allCoas: Item[]   = coasRes.coas ?? [];
+  const allUsers: Item[]  = usersRes.users ?? [];
   const roleNames  = (data.roles  || "").split(",").map(s => s.trim()).filter(Boolean);
   const groupNames = (data.groups || "").split(",").map(s => s.trim()).filter(Boolean);
   const coaCodes   = (data.coa    || "").split(",").map(s => s.trim()).filter(Boolean);
   const workspaceRoleIds  = roleNames.flatMap(n => allRoles.filter(r => String(r.name).toLowerCase().includes(n.toLowerCase())).map(r => r.id));
   const contentGroupIds   = groupNames.flatMap(n => allGroups.filter(g => String(g.name).toLowerCase().includes(n.toLowerCase())).map(g => g.id));
   const chartOfAccountIds = coaCodes.flatMap(c => allCoas.filter(ca => String(ca.code).toLowerCase() === c.toLowerCase()).map(ca => ca.id));
-  const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: data.name, email: data.email, jobTitle: data.jobtitle || undefined, department: data.department || undefined, workspaceRoleIds, contentGroupIds, chartOfAccountIds, sendInvite }) });
+  const manager = data.manager ? allUsers.find(u => String(u.name).toLowerCase().includes(data.manager.toLowerCase())) : undefined;
+  const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    name: data.name, email: data.email, jobTitle: data.jobtitle || undefined, department: data.department || undefined,
+    employeeId: data.employeeid || undefined, managerId: manager?.id,
+    workspaceRoleIds, contentGroupIds, chartOfAccountIds, sendInvite,
+  }) });
   const d = await res.json();
   return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
 }
@@ -416,6 +425,14 @@ async function createField(data: Record<string,string>): Promise<{ ok: boolean; 
   return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
 }
 
+async function createCommodity(data: Record<string,string>): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch("/api/admin/lookups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    type: "COMMODITY", code: data.code, label: data.label, parentCode: data.parent || undefined,
+  }) });
+  const d = await res.json();
+  return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
+}
+
 async function createCatalogRecord(payload: Record<string, string | undefined>): Promise<{ ok: boolean; catalogId?: string; error?: string }> {
   const res = await fetch("/api/catalogs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const d = await res.json();
@@ -454,6 +471,8 @@ function createQuestion(state: CreateState): string {
     if (step === "email")      return `Got it — **${data.name}**. What's their **work email**?`;
     if (step === "jobtitle")   return "**Job title**? (Enter to skip)";
     if (step === "department") return "**Department**? (Enter to skip)";
+    if (step === "employeeid") return "**Employee ID**? (Enter to skip)";
+    if (step === "manager")    return "**Line manager**? Type their name, or Enter to skip.";
     if (step === "roles")      return "**Roles** to assign? Comma-separated names, or Enter to skip.";
     if (step === "groups")     return "**Content groups**? Comma-separated names, or Enter to skip.";
     if (step === "coa")        return "**COA access**? Comma-separated codes, or Enter to skip.";
@@ -512,10 +531,17 @@ function createQuestion(state: CreateState): string {
     if (step === "p_to_identity")   return "Supplier's **cXML To identity**?";
     if (step === "p_secret")        return "**Shared secret** provided by the supplier?";
   }
+  if (kind === "commodity") {
+    if (step === "level")  return "What level is this commodity code? **1** = top-level category, **2** = sub-category, **3** = specific item.";
+    if (step === "parent") return `**Parent code**? (the ${data.level === "2" ? "top-level category" : "sub-category"} code this falls under)`;
+    if (step === "code")   return "**Code**? (e.g. IT-HW)";
+    if (step === "label")  return "**Label**? (e.g. IT Hardware)";
+  }
   return "";
 }
 
 function createStepOptions(state: CreateState): string[] | undefined {
+  if (state.kind === "commodity" && state.step === "level") return ["1", "2", "3"];
   if (state.kind !== "catalog") return undefined;
   const { step } = state;
   if (step === "catalog_type")  return ["Hosted Catalog", "Punchout Connection"];
@@ -528,7 +554,7 @@ function createStepOptions(state: CreateState): string[] | undefined {
 }
 
 const CREATE_NEXT_STEP: Record<CreateKind, Record<string, string>> = {
-  user:     { name: "email", email: "jobtitle", jobtitle: "department", department: "roles", roles: "groups", groups: "coa", coa: "invite" },
+  user:     { name: "email", email: "jobtitle", jobtitle: "department", department: "employeeid", employeeid: "manager", manager: "roles", roles: "groups", groups: "coa", coa: "invite" },
   role:     { name: "description", description: "permissions" },
   group:    { name: "description", description: "color" },
   lookup:   { type_name: "values" },
@@ -543,6 +569,7 @@ const CREATE_NEXT_STEP: Record<CreateKind, Record<string, string>> = {
     p_name: "p_supplier", p_supplier: "p_url", p_url: "p_from_identity",
     p_from_identity: "p_to_identity", p_to_identity: "p_secret",
   },
+  commodity: { level: "parent", parent: "code", code: "label" },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -749,7 +776,9 @@ export function AdminAgent({ onRefresh, openSignal }: { onRefresh: () => void; o
           advanceCreate(cf, "jobtitle", { ...data, email: text });
         }
         else if (step === "jobtitle")   advanceCreate(cf, "department", { ...data, jobtitle: text });
-        else if (step === "department") advanceCreate(cf, "roles", { ...data, department: text });
+        else if (step === "department") advanceCreate(cf, "employeeid", { ...data, department: text });
+        else if (step === "employeeid") advanceCreate(cf, "manager", { ...data, employeeid: text });
+        else if (step === "manager")    advanceCreate(cf, "roles", { ...data, manager: text });
         else if (step === "roles")      advanceCreate(cf, "groups", { ...data, roles: text });
         else if (step === "groups")     advanceCreate(cf, "coa", { ...data, groups: text });
         else if (step === "coa")        advanceCreate(cf, "invite", { ...data, coa: text });
@@ -859,6 +888,25 @@ export function AdminAgent({ onRefresh, openSignal }: { onRefresh: () => void; o
           const result = await createField({ ...data, required: text });
           setMessages(p => p.filter(m => m.role !== "loading"));
           if (result.ok) { addMsg([{ role: "success", text: `✓ Field **${data.label}** created.` }]); onRefresh(); resetToIdle(); }
+          else { addMsg([{ role: "error", text: result.error ?? "Failed." }]); resetToIdle(); }
+        }
+      }
+
+      // ── COMMODITY ──
+      else if (kind === "commodity") {
+        if (step === "level") {
+          const lvl = text.trim();
+          if (!["1", "2", "3"].includes(lvl)) { addMsg([{ role: "agent", text: "Please type 1, 2, or 3.", options: ["1", "2", "3"] }]); setBusy(false); return; }
+          if (lvl === "1") advanceCreate(cf, "code", { ...data, level: lvl });
+          else advanceCreate(cf, "parent", { ...data, level: lvl });
+        }
+        else if (step === "parent") advanceCreate(cf, "code", { ...data, parent: text.trim().toUpperCase() });
+        else if (step === "code")   advanceCreate(cf, "label", { ...data, code: text.trim().toUpperCase() });
+        else if (step === "label") {
+          addMsg([{ role: "loading", text: `Creating commodity **${text}**…` }]);
+          const result = await createCommodity({ ...data, label: text.trim() });
+          setMessages(p => p.filter(m => m.role !== "loading"));
+          if (result.ok) { addMsg([{ role: "success", text: `✓ Commodity **${text}** created.` }]); onRefresh(); resetToIdle(); }
           else { addMsg([{ role: "error", text: result.error ?? "Failed." }]); resetToIdle(); }
         }
       }
