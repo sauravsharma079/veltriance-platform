@@ -25,13 +25,12 @@ type Requisition = {
   businessJustification: string | null;
   customFieldAnswers: Record<string, string | number | boolean> | null;
   intakeSource: string;
-  chartOfAccount: { name: string; code: string } | null;
-  glCoding: Record<string, string> | null;
   requestor: { name: string; email: string; department: string | null };
   lineItems: {
     id: string; description: string; quantity: string; unitPrice: string; lineTotal: string;
     taxRate: string | null; glAccount: string | null; costCenter: string | null;
     contractReference: string | null; glCoding: Record<string, string> | null;
+    chartOfAccount: { name: string; code: string } | null;
     supplier: { name: string } | null;
   }[];
   approvalSteps: { id: string; stepType: string; sequence: number; status: string; comment: string | null; approver: { name: string } | null }[];
@@ -110,12 +109,8 @@ export default function RequisitionDetailPage() {
         <InfoCard label="Delivery location" value={req.deliveryLocation} />
         <InfoCard label="Required by" value={req.requiredDate ? new Date(req.requiredDate).toLocaleDateString() : null} />
         <InfoCard label="Cost center" value={req.costCenter} />
-        <InfoCard label="Chart of accounts" value={req.chartOfAccount ? `${req.chartOfAccount.name} (${req.chartOfAccount.code})` : null} />
         {req.businessUnit && <InfoCard label="Business unit" value={req.businessUnit} />}
         {req.department && <InfoCard label="Department" value={req.department} />}
-        {req.glCoding && Object.keys(req.glCoding).length > 0 && (
-          <InfoCard label="GL coding" value={Object.values(req.glCoding).join(" - ")} />
-        )}
       </div>
 
       {req.customFieldAnswers && Object.keys(req.customFieldAnswers).length > 0 && (
@@ -184,7 +179,8 @@ export default function RequisitionDetailPage() {
               <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                 <th className="px-4 py-2.5 font-medium">Description</th>
                 <th className="px-4 py-2.5 font-medium">Supplier</th>
-                <th className="px-4 py-2.5 font-medium">GL account</th>
+                <th className="px-4 py-2.5 font-medium">Chart of accounts</th>
+                <th className="px-4 py-2.5 font-medium">Billing</th>
                 <th className="px-4 py-2.5 font-medium text-right">Qty</th>
                 <th className="px-4 py-2.5 font-medium text-right">Unit price</th>
                 <th className="px-4 py-2.5 font-medium text-right">Total</th>
@@ -197,6 +193,9 @@ export default function RequisitionDetailPage() {
                   <tr key={li.id} className="border-b border-gray-50 last:border-0">
                     <td className="px-4 py-2.5 text-gray-800 font-medium">{li.description}</td>
                     <td className="px-4 py-2.5 text-gray-600 text-xs">{li.supplier?.name ?? <span className="text-red-400">Not set</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-600 text-xs">
+                      {li.chartOfAccount ? `${li.chartOfAccount.name} (${li.chartOfAccount.code})` : "—"}
+                    </td>
                     <td className="px-4 py-2.5 text-xs">
                       {glString ? (
                         <span className="font-mono text-[#1A2A52] bg-[#1A2A52]/5 px-1.5 py-0.5 rounded">{glString}</span>

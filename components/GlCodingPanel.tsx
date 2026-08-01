@@ -16,7 +16,9 @@ type GlCoding = Record<string, string>;
 type Props = {
   chartOfAccountId: string;
   glCoding: GlCoding;
-  onCoaChange: (coaId: string) => void;
+  // currency is passed alongside the id so callers can adopt the COA's own
+  // currency (e.g. an India entity's COA is INR) instead of a fixed default.
+  onCoaChange: (coaId: string, currency?: string) => void;
   onCodingChange: (coding: GlCoding) => void;
   compact?: boolean;
 };
@@ -56,7 +58,7 @@ export function GlCodingPanel({ chartOfAccountId, glCoding, onCoaChange, onCodin
         <label className="block text-xs font-medium text-gray-600 mb-1">Chart of accounts</label>
         <select
           value={chartOfAccountId}
-          onChange={e => { onCoaChange(e.target.value); onCodingChange({}); }}
+          onChange={e => { onCoaChange(e.target.value, coas.find(c => c.id === e.target.value)?.currency); onCodingChange({}); }}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#1A2A52]"
         >
           <option value="">— Select COA —</option>

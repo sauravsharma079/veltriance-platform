@@ -37,8 +37,25 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // RequisitionLineItem.glCoaId is a plain string, not a Prisma relation (line items
+  // can each reference a different chart of accounts), so resolve it manually rather
+  // than via `include` — this is what lets GL coding be shown per line, not just once
+  // for the whole requisition.
+  const coaIds = Array.from(new Set(requisition.lineItems.map(li => li.glCoaId).filter((v): v is string => !!v)));
+  const lineCoas = coaIds.length > 0
+    ? await prisma.chartOfAccount.findMany({ where: { id: { in: coaIds } }, select: { id: true, name: true, code: true } })
+    : [];
+  const lineCoaMap = new Map(lineCoas.map(c => [c.id, c]));
+  const requisitionWithLineCoas = {
+    ...requisition,
+    lineItems: requisition.lineItems.map(li => ({
+      ...li,
+      chartOfAccount: li.glCoaId ? (lineCoaMap.get(li.glCoaId) ?? null) : null,
+    })),
+  };
+
   const pendingStep = requisition.approvalSteps.find((s) => s.status === "PENDING");
   const canAct = pendingStep ? canActOnStep(pendingStep, profile) : false;
 
-  return NextResponse.json({ requisition, canAct });
+  return NextResponse.json({ requisition: requisitionWithLineCoas, canAct });
 }

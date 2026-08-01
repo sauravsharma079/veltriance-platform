@@ -11,7 +11,7 @@ export default function PrintPage() {
     fetch(`/api/purchase-orders/${id}`).then(r=>r.json()).then(d=>{ if(d.purchaseOrder) setPo(d.purchaseOrder); else setErr("Not found"); }).catch(()=>setErr("Failed"));
   }, [id]);
   useEffect(() => { if(po) setTimeout(()=>window.print(), 600); }, [po]);
-  const fmt = (n:number) => "₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2});
+  const fmt = (n:number) => (po?.currency||"INR")+" "+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2});
   const dt = (d:string|null) => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
   if(err) return <div style={{padding:40,fontFamily:"Arial",color:"red"}}>{err}</div>;
   if(!po) return <div style={{padding:40,fontFamily:"Arial",color:"#666",textAlign:"center"}}>Loading PO...</div>;
@@ -25,16 +25,10 @@ export default function PrintPage() {
         <div className="mb"><div className="lbl">Supplier</div><div className="val">{po.supplier?.name||"—"}</div><div className="sub">{po.supplier?.code||""}<br/>{po.supplier?.contactEmail||""}<br/>{po.supplier?.contactPhone||""}</div></div>
         <div className="mb"><div className="lbl">PO Details</div><div className="val">Issued: {dt(po.issuedAt)}</div><div className="sub">Required by: {dt(po.requiredDate)}<br/>Payment: {po.paymentTerms||po.supplier?.paymentTerms||"Net 30"}<br/>Currency: {po.currency||"INR"}</div></div>
       </div>
-      <div className="dlv">
-        <div className="lbl">Delivery Location</div><div className="val">{po.deliveryAddress||"To be confirmed"}</div>
-        {(po.chartOfAccount || (po.glCoding && Object.keys(po.glCoding).length > 0)) && <>
-          <div className="lbl" style={{marginTop:10}}>Chart of Accounts</div>
-          <div className="val">{po.chartOfAccount ? `${po.chartOfAccount.name} (${po.chartOfAccount.code})` : "—"}{po.glCoding && Object.keys(po.glCoding).length > 0 ? ` · GL: ${Object.values(po.glCoding).join(" - ")}` : ""}</div>
-        </>}
-      </div>
+      <div className="dlv"><div className="lbl">Delivery Location</div><div className="val">{po.deliveryAddress||"To be confirmed"}</div></div>
       <div className="tt">Line Items</div>
-      <table><thead><tr><th className="c" style={{width:"4%"}}>#</th><th style={{width:"44%"}}>Description</th><th className="c" style={{width:"7%"}}>Qty</th><th className="r" style={{width:"15%"}}>Unit Price</th><th className="c" style={{width:"10%"}}>GL A/c</th><th className="r" style={{width:"15%"}}>Total</th></tr></thead>
-      <tbody>{po.lineItems?.length>0?po.lineItems.map((li,i)=><tr key={i}><td className="c">{i+1}</td><td>{li.description||"—"}</td><td className="c">{li.quantity??1}</td><td className="r">{fmt(li.unitPrice??0)}</td><td className="c">{li.glAccount||"—"}</td><td className="r">{fmt(li.lineTotal??0)}</td></tr>):<tr><td colSpan={6} className="c" style={{color:"#9ca3af",padding:20}}>No line items</td></tr>}</tbody></table>
+      <table><thead><tr><th className="c" style={{width:"4%"}}>#</th><th style={{width:"32%"}}>Description</th><th className="c" style={{width:"6%"}}>Qty</th><th className="r" style={{width:"13%"}}>Unit Price</th><th style={{width:"17%"}}>Chart of Accounts</th><th className="c" style={{width:"11%"}}>Billing</th><th className="r" style={{width:"13%"}}>Total</th></tr></thead>
+      <tbody>{po.lineItems?.length>0?po.lineItems.map((li,i)=><tr key={i}><td className="c">{i+1}</td><td>{li.description||"—"}</td><td className="c">{li.quantity??1}</td><td className="r">{fmt(li.unitPrice??0)}</td><td>{po.chartOfAccount?`${po.chartOfAccount.name} (${po.chartOfAccount.code})`:"—"}</td><td className="c">{li.glAccount||"—"}</td><td className="r">{fmt(li.lineTotal??0)}</td></tr>):<tr><td colSpan={7} className="c" style={{color:"#9ca3af",padding:20}}>No line items</td></tr>}</tbody></table>
       <div className="tw"><div className="tb"><div className="tr"><span>Subtotal (excl. tax)</span><span>{fmt(po.subtotal??0)}</span></div><div className="tr"><span>Tax</span><span>{fmt(po.totalTax??0)}</span></div><div className="tr g"><span>TOTAL AMOUNT</span><span>{fmt(po.totalAmount??0)}</span></div></div></div>
       <div className="trm"><div className="l2">Terms & Conditions</div><p>1. This Purchase Order is issued subject to the standard procurement terms of {po.organization?.name||"the issuing organization"}.<br/>2. All goods/services must conform to specifications. Any deviation requires prior written approval.<br/>3. Invoice must quote PO number <strong>{po.poNumber}</strong>. Invoices without reference will not be processed.<br/>4. Payment will be made as per agreed terms upon receipt of goods/services and valid tax invoice.</p></div>
       <div className="sgs"><div className="sg"><div className="sl"/><div className="sn">Procurement Manager</div><div className="sr">Authorised Signatory</div></div><div className="sg"><div className="sl"/><div className="sn">Finance Controller</div><div className="sr">Finance Approval</div></div><div className="sg"><div className="sl"/><div className="sn">{po.supplier?.contactName||"Supplier Representative"}</div><div className="sr">Supplier Acknowledgement</div></div></div>

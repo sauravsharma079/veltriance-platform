@@ -25,10 +25,9 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     const deliveryLoc = (po as any).deliveryLocation ?? (po as any).deliveryAddress ?? "To be confirmed";
     const requiredDt  = (po as any).requiredDate ?? (po as any).expectedDelivery ?? null;
     const coa = (po as any).chartOfAccount as { name: string; code: string } | null;
-    const glCoding = (po as any).glCoding as Record<string, string> | null;
-    const glCodingStr = glCoding && Object.keys(glCoding).length > 0 ? Object.values(glCoding).join(" - ") : null;
+    const coaStr = coa ? `${coa.name} (${coa.code})` : "—";
 
-    const fmt = (n: any) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+    const fmt = (n: any) => ((po as any).currency||"INR") + " " + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
     const dt  = (d: any) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
     const rows = LI.map((li: any, i: number) => `
@@ -37,6 +36,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
         <td style="padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.description||"—"}</td>
         <td style="text-align:center;padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.quantity??1}</td>
         <td style="text-align:right;padding:8px 10px;font-size:10px;font-family:monospace;border-bottom:1px solid #e5e7eb">${fmt(li.unitPrice??0)}</td>
+        <td style="padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${coaStr}</td>
         <td style="text-align:center;padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.glAccount||"—"}</td>
         <td style="text-align:right;padding:8px 10px;font-size:10px;font-family:monospace;border-bottom:1px solid #e5e7eb">${fmt(li.lineTotal??0)}</td>
       </tr>`).join("");
@@ -83,20 +83,19 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111827;backgro
 <div style="background:#f8f9fb;border-radius:6px;padding:12px;border-left:3px solid #C8A04D;margin-bottom:20px">
   <div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">Delivery Location</div>
   <div style="font-size:11px;font-weight:600;color:#111">${deliveryLoc}</div>
-  ${coa || glCodingStr ? `<div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-top:10px;margin-bottom:5px">Chart of Accounts</div>
-  <div style="font-size:11px;font-weight:600;color:#111">${coa ? `${coa.name} (${coa.code})` : "—"}${glCodingStr ? ` &middot; GL: ${glCodingStr}` : ""}</div>` : ""}
 </div>
 <div style="font-size:9px;font-weight:700;color:#1A2A52;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Line Items</div>
 <table style="width:100%;border-collapse:collapse;margin-bottom:20px">
   <thead><tr style="background:#1A2A52">
     <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:center;width:4%">#</th>
-    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:left;width:44%">Description</th>
+    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:left;width:32%">Description</th>
     <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:center;width:7%">Qty</th>
-    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:right;width:15%">Unit Price</th>
-    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:center;width:10%">GL A/c</th>
-    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:right;width:15%">Total</th>
+    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:right;width:13%">Unit Price</th>
+    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:left;width:17%">Chart of Accounts</th>
+    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:center;width:9%">Billing</th>
+    <th style="padding:9px 10px;color:white;font-size:8.5px;font-weight:700;text-transform:uppercase;text-align:right;width:13%">Total</th>
   </tr></thead>
-  <tbody>${rows||'<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:20px;font-size:10px">No line items</td></tr>'}</tbody>
+  <tbody>${rows||'<tr><td colspan="7" style="text-align:center;color:#9ca3af;padding:20px;font-size:10px">No line items</td></tr>'}</tbody>
 </table>
 <div style="display:flex;justify-content:flex-end;margin-bottom:20px">
   <div style="width:260px">

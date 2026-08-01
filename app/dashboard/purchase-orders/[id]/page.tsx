@@ -26,6 +26,7 @@ type PO = {
   supplier: { id: string; name: string; contactEmail: string | null; contactName: string | null } | null;
   requisition: { requisitionNumber: string; title: string } | null;
   createdBy: { name: string; email: string };
+  chartOfAccount: { name: string; code: string } | null;
   lineItems: { id: string; description: string; quantity: string; unitPrice: string; lineTotal: string; glAccount: string | null }[];
 };
 
@@ -192,7 +193,8 @@ export default function PODetailPage() {
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                 <th className="px-4 py-2.5 font-medium">Description</th>
-                <th className="px-4 py-2.5 font-medium">GL Account</th>
+                <th className="px-4 py-2.5 font-medium">Chart of accounts</th>
+                <th className="px-4 py-2.5 font-medium">Billing</th>
                 <th className="px-4 py-2.5 font-medium text-right">Qty</th>
                 <th className="px-4 py-2.5 font-medium text-right">Unit price</th>
                 <th className="px-4 py-2.5 font-medium text-right">Total</th>
@@ -202,6 +204,7 @@ export default function PODetailPage() {
               {po.lineItems.map(li => (
                 <tr key={li.id} className="border-b border-gray-50 last:border-0">
                   <td className="px-4 py-2.5 text-gray-700">{li.description}</td>
+                  <td className="px-4 py-2.5 text-gray-500 text-xs">{po.chartOfAccount ? `${po.chartOfAccount.name} (${po.chartOfAccount.code})` : "—"}</td>
                   <td className="px-4 py-2.5 text-gray-400 text-xs">{li.glAccount ?? "—"}</td>
                   <td className="px-4 py-2.5 text-gray-500 text-right">{li.quantity}</td>
                   <td className="px-4 py-2.5 text-gray-500 text-right">{Number(li.unitPrice).toLocaleString()}</td>

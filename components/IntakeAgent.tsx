@@ -6,6 +6,7 @@ import { Sparkles, X, Send, Loader2, CheckCircle2, AlertCircle, AlertTriangle, C
 import type { ExtractedRequirement } from "@/lib/ai/nlu";
 import type { IntakeDecision, CatalogMatch } from "@/lib/ai/intake-decision";
 import { GlCodingPanel } from "@/components/GlCodingPanel";
+import { isRecognizedDatePhrase } from "@/lib/date-phrase";
 
 type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: string; options?: string[] };
 
@@ -28,7 +29,7 @@ type Draft = {
   title: string; category: string | null; quantity: number | null; unitPrice: number | null;
   deliveryLocation: string | null; requiredDate: string | null; priority: string;
   businessJustification: string | null; supplierId?: string; supplierName?: string;
-  costCenter: string | null; chartOfAccountId: string; glCoding: Record<string, string>;
+  costCenter: string | null; chartOfAccountId: string; glCoding: Record<string, string>; currency: string;
 };
 
 // Which required field a "not configured yet" popup refers to, and what to do once dismissed.
@@ -185,6 +186,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       unitPrice: match?.unitPrice ?? baseDraft.unitPrice,
       supplierId: match ? undefined : dec.supplierMatches[0]?.id,
       supplierName: match?.supplierName ?? dec.supplierMatches[0]?.name,
+      currency: match?.currency ?? baseDraft.currency,
     };
     setDraft(newDraft);
 
@@ -266,7 +268,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       unitPrice: null, deliveryLocation: extracted.deliveryLocation,
       requiredDate: extracted.requiredDate, priority: extracted.priority,
       businessJustification: extracted.businessJustification,
-      costCenter: null, chartOfAccountId: "", glCoding: {},
+      costCenter: null, chartOfAccountId: "", glCoding: {}, currency: "USD",
     };
     setDraft(newDraft);
 
@@ -328,6 +330,13 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     const skip = text.toLowerCase() === "skip";
     push({ role: "user", text });
 
+    // A date phrase the server can't parse would otherwise be silently dropped —
+    // stored as null with no signal back to the requestor. Catch it here instead.
+    if (field === "requiredDate" && !skip && !isRecognizedDatePhrase(text)) {
+      push({ role: "agent", text: "I couldn't understand that date — try something like **'next month'**, **'ASAP'**, **'in 2 weeks'**, or a specific date (e.g. 2026-09-15)." });
+      return;
+    }
+
     const updated: Draft = { ...draft };
     if (field === "quantity") updated.quantity = skip ? null : parseInt(text.replace(/\D/g, "")) || null;
     if (field === "unitPrice") updated.unitPrice = skip ? null : parseFloat(text.replace(/[^\d.]/g, "")) || null;
@@ -344,7 +353,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
 
   function showConfirmWith(d: Draft) {
     setStep("CONFIRM");
-    const amount = d.unitPrice && d.quantity ? (d.unitPrice * d.quantity).toLocaleString() : "TBD";
+    const amount = d.unitPrice && d.quantity ? `${d.currency} ${(d.unitPrice * d.quantity).toLocaleString()}` : "TBD";
     push({
       role: "agent",
       text: `📋 **Ready to submit:**\n\n**${d.title}**\nCategory: ${d.category ?? "—"} · Qty: ${d.quantity ?? "—"} · Est. amount: ${amount}\nDelivery: ${d.deliveryLocation ?? "—"} · Cost center: ${d.costCenter ?? "—"} · Needed: ${d.requiredDate ?? "—"} · Priority: ${d.priority}${d.chartOfAccountId && Object.keys(d.glCoding).length > 0 ? `\nGL coding: ${Object.values(d.glCoding).join(" - ")}` : ""}${d.supplierName ? `\nSupplier: ${d.supplierName}` : ""}${d.businessJustification ? `\nJustification: ${d.businessJustification}` : ""}\n\nShall I submit this for approval?`,
@@ -366,6 +375,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
         costCenter: draft.costCenter ?? undefined,
         chartOfAccountId: draft.chartOfAccountId || undefined,
         glCoding: Object.keys(draft.glCoding).length > 0 ? draft.glCoding : undefined,
+        currency: draft.currency,
       }
     );
     setMessages(p => p.filter(m => m.role !== "loading"));
@@ -500,7 +510,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
                 <GlCodingPanel
                   chartOfAccountId={draft.chartOfAccountId}
                   glCoding={draft.glCoding}
-                  onCoaChange={id => setDraft(d => d ? { ...d, chartOfAccountId: id, glCoding: {} } : d)}
+                  onCoaChange={(id, currency) => setDraft(d => d ? { ...d, chartOfAccountId: id, glCoding: {}, currency: currency ?? d.currency } : d)}
                   onCodingChange={coding => setDraft(d => d ? { ...d, glCoding: coding } : d)}
                   compact
                 />

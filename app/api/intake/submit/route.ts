@@ -7,6 +7,7 @@ import { generateRequisitionNumber } from "@/lib/requisition-number";
 import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { logAudit } from "@/lib/audit";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { parseRequiredDate } from "@/lib/date-phrase";
 
 const lineItemSchema = z.object({
   description: z.string().min(1),
@@ -94,6 +95,13 @@ export async function POST(req: NextRequest) {
         unitPrice: d.unitPrice ?? 0,
         taxRate: 0,
         supplierId,
+        // Chatbot intake collects GL coding/cost center once at the header level —
+        // carry it down onto the line item too, since that's where the requisition
+        // and PO templates display it (billing-level display was a real gap: the
+        // header had the coding but every line item showed "—").
+        costCenter: d.costCenter,
+        glCoaId: d.chartOfAccountId,
+        glCoding: d.glCoding,
       }];
     }
 
@@ -147,18 +155,7 @@ export async function POST(req: NextRequest) {
         budget: d.budget,
         costCenter: d.costCenter ?? profile.costCenter,
         deliveryLocation: d.deliveryLocation,
-        requiredDate: (() => {
-          if (!d.requiredDate) return null;
-          const s = d.requiredDate.toLowerCase().trim();
-          const now = new Date();
-          if (s === "asap" || s === "today") return now;
-          if (s.includes("this week")) { const x=new Date(now); x.setDate(now.getDate()+(5-now.getDay())); return x; }
-          if (s.includes("2 week")||s.includes("two week")) { const x=new Date(now); x.setDate(now.getDate()+14); return x; }
-          if (s.includes("this month")) return new Date(now.getFullYear(), now.getMonth()+1, 0);
-          if (s.includes("next month")) return new Date(now.getFullYear(), now.getMonth()+2, 0);
-          const p = new Date(d.requiredDate);
-          return isNaN(p.getTime()) ? null : p;
-        })(),
+        requiredDate: parseRequiredDate(d.requiredDate),
         currency: d.currency,
         totalAmount,
         taxAmount: totalTax,
