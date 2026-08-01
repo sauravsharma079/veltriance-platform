@@ -37,8 +37,6 @@ const TABS = [
 ];
 
 const ROLES_LIST = ["ADMIN","PROCUREMENT","APPROVER","REQUESTOR","VIEWER"];
-// DEPTS loaded from /api/admin/lookups?type=DEPARTMENT
-const DEPTS: string[] = [];
 const STEP_TYPES = ["MANAGER","DIRECTOR","FINANCE","EXECUTIVE","PROCUREMENT"];
 const FIELD_TYPES = ["TEXT","NUMBER","DATE","DROPDOWN","CHECKBOX","TEXTAREA"];
 const MODULES = ["REQUISITION","SUPPLIER","PURCHASE_ORDER"];
@@ -208,6 +206,7 @@ export default function AdminPage() {
   const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"", employeeId:"", managerId:"", businessUnit:"", costCenter:"", addressLine1:"", city:"", state:"", postalCode:"", country:"", contentGroupIds:[] as string[], workspaceRoleIds:[] as string[] });
   const [ruleForm, setRuleForm] = useState({ name:"", module:"REQUISITION", priority:"10", minAmount:"", maxAmount:"", category:"", department:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager", approverUserIds:[] as string[], approverMode:"ANY" }] });
   const [lookupForm, setLookupForm] = useState({ type:"DEPARTMENT", code:"", label:"" });
+  const [creatingNewType, setCreatingNewType] = useState(false);
   const [commodityForm, setCommodityForm] = useState({ code:"", label:"", parentCode:"" });
   const [expandedCommodity, setExpandedCommodity] = useState<string|null>(null);
   const [expandedCommodity2, setExpandedCommodity2] = useState<string|null>(null);
@@ -282,9 +281,11 @@ export default function AdminPage() {
     setRuleForm({ name:"", module:"REQUISITION", priority:"10", minAmount:"", maxAmount:"", category:"", department:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager", approverUserIds:[], approverMode:"ANY" }] });
   }
   async function createLookup() {
+    if (!lookupForm.type) { setError("Type required"); return; }
     if (!lookupForm.code || !lookupForm.label) { setError("Code and label required"); return; }
     await apiCall("/api/admin/lookups", "POST", lookupForm);
     setLookupForm({ type:"DEPARTMENT", code:"", label:"" });
+    setCreatingNewType(false);
   }
   async function createCommodity() {
     if (!commodityForm.code || !commodityForm.label) { setError("Code and label required"); return; }
@@ -361,6 +362,7 @@ export default function AdminPage() {
   }
 
   const pendingInvites = users.filter(u=>u.inviteStatus==="PENDING").length;
+  const depts = [...new Set(lookups.filter(l=>l.type==="DEPARTMENT").map(l=>l.label))];
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] flex">
@@ -584,7 +586,7 @@ export default function AdminPage() {
 
           {tab==="lookups"&&(
             <div>
-              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Lookup Values <span className="text-sm font-normal text-gray-400 ml-1">{lookups.filter(l=>l.type!=="COMMODITY").length} values</span></h2><div className="flex items-center gap-2"><button onClick={()=>setShowLookupUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button><button onClick={()=>setModal("lookup")} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Value</button></div></div>
+              <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Lookup Values <span className="text-sm font-normal text-gray-400 ml-1">{lookups.filter(l=>l.type!=="COMMODITY").length} values</span></h2><div className="flex items-center gap-2"><button onClick={()=>setShowLookupUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button><button onClick={()=>{ setCreatingNewType(true); setLookupForm({type:"",code:"",label:""}); setModal("lookup"); }} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Plus className="size-3.5"/>New Type</button><button onClick={()=>{ setCreatingNewType(false); setLookupForm(f=>({...f,code:"",label:"",type:[...new Set([...LOOKUP_TYPES,...lookups.filter(l=>l.type!=="COMMODITY").map(l=>l.type)])][0]||""})); setModal("lookup"); }} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Value</button></div></div>
               {lookups.filter(l=>l.type!=="COMMODITY").length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No lookups</div>:(
                 <div className="space-y-4">{[...new Set(lookups.filter(l=>l.type!=="COMMODITY").map(l=>l.type))].map(type=>(<div key={type}><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{type.replace(/_/g," ")}</p><div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">{lookups.filter(l=>l.type===type).map(l=>(<div key={l.id} className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/40"><span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded w-20 text-center">{l.code}</span><span className="text-sm text-gray-800 flex-1">{l.label}</span><button onClick={()=>{ if(confirm("Delete this lookup?")) apiCall("/api/admin/lookups","DELETE",{id:l.id}); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3"/></button></div>))}</div></div>))}</div>
               )}
@@ -715,7 +717,7 @@ export default function AdminPage() {
         </div>
         <Sel label="Role *" value={userForm.role} onChange={v=>setUserForm(f=>({...f,role:v}))} options={ROLES_LIST}/>
         <div className="grid grid-cols-2 gap-3">
-          <Sel label="Department" value={userForm.department} onChange={v=>setUserForm(f=>({...f,department:v}))} options={DEPTS}/>
+          <Sel label="Department" value={userForm.department} onChange={v=>setUserForm(f=>({...f,department:v}))} options={depts}/>
           <UserSel label="Line Manager" value={userForm.managerId} onChange={v=>setUserForm(f=>({...f,managerId:v}))} users={users}/>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -742,7 +744,7 @@ export default function AdminPage() {
         </div>
         <Sel label="Role" value={editItem.role||""} onChange={v=>setEditItem((p:any)=>({...p,role:v}))} options={ROLES_LIST}/>
         <div className="grid grid-cols-2 gap-3">
-          <Sel label="Department" value={editItem.department||""} onChange={v=>setEditItem((p:any)=>({...p,department:v}))} options={DEPTS}/>
+          <Sel label="Department" value={editItem.department||""} onChange={v=>setEditItem((p:any)=>({...p,department:v}))} options={depts}/>
           <UserSel label="Line Manager" value={editItem.managerId||""} onChange={v=>setEditItem((p:any)=>({...p,managerId:v}))} users={users.filter(u=>u.id!==editItem.id)}/>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -795,7 +797,7 @@ export default function AdminPage() {
         <Sel label="Applies To" value={ruleForm.module} onChange={v=>setRuleForm(f=>({...f,module:v}))} options={APPROVAL_MODULES}/>
         <div className="grid grid-cols-2 gap-3">
           <Sel label="Category (optional)" value={ruleForm.category} onChange={v=>setRuleForm(f=>({...f,category:v}))} options={[...new Set(lookups.filter(l=>l.type==="CATEGORY").map(l=>l.label))]}/>
-          <Sel label="Department (optional)" value={ruleForm.department} onChange={v=>setRuleForm(f=>({...f,department:v}))} options={DEPTS}/>
+          <Sel label="Department (optional)" value={ruleForm.department} onChange={v=>setRuleForm(f=>({...f,department:v}))} options={depts}/>
         </div>
         <div className="grid grid-cols-2 gap-3"><Input label="Min Amount (Rs)" value={ruleForm.minAmount} onChange={v=>setRuleForm(f=>({...f,minAmount:v}))} placeholder="0" type="number"/><Input label="Max Amount (Rs)" value={ruleForm.maxAmount} onChange={v=>setRuleForm(f=>({...f,maxAmount:v}))} placeholder="Leave blank for no limit" type="number"/></div>
         <Input label="Priority" value={ruleForm.priority} onChange={v=>setRuleForm(f=>({...f,priority:v}))} placeholder="10" type="number"/>
@@ -808,7 +810,7 @@ export default function AdminPage() {
         <Sel label="Applies To" value={editItem.module||"REQUISITION"} onChange={v=>setEditItem((p:any)=>({...p,module:v}))} options={APPROVAL_MODULES}/>
         <div className="grid grid-cols-2 gap-3">
           <Sel label="Category (optional)" value={editItem.category||""} onChange={v=>setEditItem((p:any)=>({...p,category:v}))} options={[...new Set(lookups.filter(l=>l.type==="CATEGORY").map(l=>l.label))]}/>
-          <Sel label="Department (optional)" value={editItem.department||""} onChange={v=>setEditItem((p:any)=>({...p,department:v}))} options={DEPTS}/>
+          <Sel label="Department (optional)" value={editItem.department||""} onChange={v=>setEditItem((p:any)=>({...p,department:v}))} options={depts}/>
         </div>
         <div className="grid grid-cols-2 gap-3"><Input label="Min Amount (Rs)" value={editItem.minAmount||""} onChange={v=>setEditItem((p:any)=>({...p,minAmount:v}))} placeholder="0" type="number"/><Input label="Max Amount (Rs)" value={editItem.maxAmount||""} onChange={v=>setEditItem((p:any)=>({...p,maxAmount:v}))} placeholder="Leave blank for no limit" type="number"/></div>
         <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={editItem.active} onChange={e=>setEditItem((p:any)=>({...p,active:e.target.checked}))} className="size-4 accent-[#1A2A52]"/><span className="text-sm text-gray-700 font-medium">Active</span></label>
@@ -816,18 +818,28 @@ export default function AdminPage() {
         <div className="flex gap-3 pt-2"><button onClick={()=>apiCall(`/api/admin/approval-rules/${editItem.id}`,"PATCH",{name:editItem.name,module:editItem.module,category:editItem.category||null,department:editItem.department||null,active:editItem.active,minAmount:editItem.minAmount?parseFloat(editItem.minAmount):null,maxAmount:editItem.maxAmount?parseFloat(editItem.maxAmount):null,steps:(editItem.steps||[]).map((s:any,i:number)=>({sequence:i+1,stepType:s.stepType,stepLabel:s.stepLabel,approverUserIds:s.approverUserIds,approverMode:s.approverMode}))})} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Save Changes"}</button><button onClick={()=>{ setModal(null); setEditItem(null); }} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
       </Modal>}
 
-      {modal==="lookup"&&<Modal title="Add Lookup Value" onClose={()=>{ setModal(null); setError(""); }}>
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Type * <span className="font-normal normal-case text-gray-400">(pick existing or type a new one)</span></label>
-          <input list="lookupTypeOptions" value={lookupForm.type} onChange={e=>setLookupForm(f=>({...f,type:e.target.value.toUpperCase().replace(/\s+/g,"_")}))} placeholder="e.g. SHIPPING_METHOD"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1A2A52] focus:ring-1 focus:ring-[#1A2A52]/20"/>
-          <datalist id="lookupTypeOptions">
-            {[...new Set([...LOOKUP_TYPES, ...lookups.map(l=>l.type).filter(t=>t!=="COMMODITY")])].map(t=><option key={t} value={t}/>)}
-          </datalist>
-        </div>
+      {modal==="lookup"&&<Modal title={creatingNewType?"Create New Lookup Type":"Add Lookup Value"} onClose={()=>{ setModal(null); setError(""); }}>
+        {creatingNewType?(
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">New Type Name *</label>
+            <input value={lookupForm.type} onChange={e=>setLookupForm(f=>({...f,type:e.target.value.toUpperCase().replace(/\s+/g,"_")}))} placeholder="e.g. SHIPPING_METHOD"
+              autoFocus
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1A2A52] focus:ring-1 focus:ring-[#1A2A52]/20"/>
+            <p className="text-[10px] text-gray-400 mt-1">You'll add the first value under this type right after.</p>
+          </div>
+        ):(
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Type *</label>
+            <select value={lookupForm.type} onChange={e=>{ if(e.target.value==="__new__"){ setCreatingNewType(true); setLookupForm(f=>({...f,type:""})); } else setLookupForm(f=>({...f,type:e.target.value})); }}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1A2A52]">
+              {[...new Set([...LOOKUP_TYPES, ...lookups.filter(l=>l.type!=="COMMODITY").map(l=>l.type)])].map(t=><option key={t} value={t}>{t.replace(/_/g," ")}</option>)}
+              <option value="__new__">+ Create a new type…</option>
+            </select>
+          </div>
+        )}
         <Input label="Code *" value={lookupForm.code} onChange={v=>setLookupForm(f=>({...f,code:v.toUpperCase()}))} placeholder="e.g. ENG or 6100"/>
         <Input label="Label *" value={lookupForm.label} onChange={v=>setLookupForm(f=>({...f,label:v}))} placeholder="e.g. Engineering"/>
-        <div className="flex gap-3 pt-2"><button onClick={createLookup} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Add Value"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+        <div className="flex gap-3 pt-2"><button onClick={createLookup} disabled={saving||!lookupForm.type} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":creatingNewType?"Create Type & Add Value":"Add Value"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
       </Modal>}
 
       {modal==="commodity"&&<Modal title={commodityForm.parentCode?`Add under ${commodityForm.parentCode}`:"Add Top-Level Commodity"} onClose={()=>{ setModal(null); setError(""); }}>
@@ -914,7 +926,7 @@ export default function AdminPage() {
         <CsvUploadModal
           config={{
             title: "Upload Lookup Values",
-            description: "Bulk import departments, GL accounts, cost centers, categories.",
+            description: "Bulk import departments, GL accounts, cost centers, categories, or any new lookup type — the \"type\" column isn't restricted to a fixed list; any value creates that type if it doesn't exist yet.",
             endpoint: "/api/upload/lookups",
             templateName: "veltriance_lookups_template",
             headers: ["type","code","label","sortOrder"],
@@ -924,6 +936,7 @@ export default function AdminPage() {
               ["GL_ACCOUNT","7000","7000 — Research & Development","10"],
               ["CATEGORY","CAT-RND","Research & Development","9"],
               ["PAYMENT_TERMS","NET90","Net 90 Days","6"],
+              ["SHIPPING_METHOD","AIR","Air Freight","1"],
             ],
           }}
           onClose={() => setShowLookupUpload(false)}
