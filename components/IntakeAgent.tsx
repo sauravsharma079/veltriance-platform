@@ -10,7 +10,9 @@ import { isRecognizedDatePhrase } from "@/lib/date-phrase";
 
 type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: string; options?: string[] };
 
-type Step = "WELCOME" | "CATEGORY_PICK" | "ITEM_PICK" | "DECISION_CONFIRM" | "REVIEW" | "GAP_FILL" | "COA_PICK" | "CONFIRM";
+type Step = "WELCOME" | "CATEGORY_PICK" | "ITEM_PICK" | "SUPPLIER_PICK" | "DECISION_CONFIRM" | "REVIEW" | "GAP_FILL" | "COA_PICK" | "CONFIRM";
+
+type SupplierMatch = IntakeDecision["supplierMatches"][number];
 
 type GapField = "quantity" | "unitPrice" | "chartOfAccount" | "costCenter" | "deliveryLocation" | "requiredDate" | "businessJustification";
 const GAP_QUESTIONS: Record<GapField, string> = {
@@ -59,6 +61,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
   const [gapQueue, setGapQueue] = useState<GapField[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [catalogCandidates, setCatalogCandidates] = useState<CatalogMatch[]>([]);
+  const [supplierCandidates, setSupplierCandidates] = useState<SupplierMatch[]>([]);
   const [costCenters, setCostCenters] = useState<LookupOption[]>([]);
   const [deliveryAddresses, setDeliveryAddresses] = useState<LookupOption[]>([]);
   const [missingConfig, setMissingConfig] = useState<MissingConfig | null>(null);
@@ -181,11 +184,36 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
   }
 
   function applyDecisionMatch(baseDraft: Draft, dec: IntakeDecision, match: CatalogMatch | null, confidenceNote: string) {
+    setDecision(dec);
+
+    if (!match && dec.supplierMatches.length > 0) {
+      // Not a hosted catalog item — let the requester pick which supplier to route
+      // to, or explicitly ask for external sourcing, rather than silently defaulting
+      // to whichever supplier happens to rank first.
+      setDraft(baseDraft);
+      setSupplierCandidates(dec.supplierMatches);
+      push({
+        role: "agent",
+        text: `**Category:** ${baseDraft.category}${confidenceNote}\n\n⚠️ **Not in our hosted catalog** — this isn't set up for direct purchase. I found ${dec.supplierMatches.length} supplier(s) in this category. Pick one to route this to, or have it sourced from the market.`,
+        options: [
+          ...dec.supplierMatches.map((s, i) => `${i + 1}. ${s.name}`),
+          `${dec.supplierMatches.length + 1}. Source this from the market instead`,
+        ],
+      });
+      setStep("SUPPLIER_PICK");
+      return;
+    }
+
+    finishDecision(baseDraft, match, null, confidenceNote);
+  }
+
+  function finishDecision(baseDraft: Draft, match: CatalogMatch | null, chosenSupplier: SupplierMatch | null, confidenceNote: string) {
+    const needsSourcing = !match && !chosenSupplier;
     const newDraft: Draft = {
       ...baseDraft,
       unitPrice: match?.unitPrice ?? baseDraft.unitPrice,
-      supplierId: match ? undefined : dec.supplierMatches[0]?.id,
-      supplierName: match?.supplierName ?? dec.supplierMatches[0]?.name,
+      supplierId: match ? undefined : chosenSupplier?.id,
+      supplierName: match?.supplierName ?? chosenSupplier?.name,
       currency: match?.currency ?? baseDraft.currency,
     };
     setDraft(newDraft);
@@ -193,14 +221,14 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     const lines: string[] = [`**Category:** ${newDraft.category}${confidenceNote}`];
     if (match) {
       lines.push(`\n\n✅ **Found in your catalog:** ${match.itemName} (${match.sku}) — ${match.currency} ${match.unitPrice} from ${match.supplierName ?? "an existing supplier"}. I can buy this directly, no sourcing needed.`);
-    } else if (dec.supplierMatches.length > 0) {
-      lines.push(`\n\n✅ **Found ${dec.supplierMatches.length} existing supplier(s)** for this category: ${dec.supplierMatches.map(s => s.name).join(", ")}. I'll route this to ${dec.supplierMatches[0].name}.`);
-    } else if (dec.needsSourcing) {
-      lines.push(`\n\n⚠️ **No existing catalog item or supplier found** for this category. I'll submit the requisition, but procurement will need to onboard a supplier before it can be ordered.`);
+    } else if (chosenSupplier) {
+      lines.push(`\n\n✅ Routing this to **${chosenSupplier.name}**. This isn't a hosted catalog item, so procurement will need to get pricing from them before it can be ordered.`);
+    } else {
+      lines.push(`\n\n⚠️ **Not in our hosted catalog, and no supplier selected.** I'll submit the requisition, but procurement will need to source this from the market before it can be ordered.`);
     }
 
     setStep("REVIEW");
-    if (dec.needsSourcing) {
+    if (needsSourcing) {
       push({ role: "agent", text: lines.join(""), options: ["🏢 Onboard a supplier now", "➡️ Continue anyway"] });
       return;
     }
@@ -210,6 +238,24 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     // be delivered" the moment a match is found.
     push({ role: "agent", text: lines.join(""), options: match ? ["✅ Yes, use this item", "🔍 Not the right item"] : ["✅ Continue"] });
     setStep("DECISION_CONFIRM");
+  }
+
+  async function handleSupplierPick(text: string) {
+    const bulletMatch = text.match(/^(\d+)\.\s/);
+    const pureNumber = /^\d+$/.test(text.trim());
+    const idx = bulletMatch ? parseInt(bulletMatch[1]) : pureNumber ? parseInt(text.trim()) : NaN;
+    const maxIdx = supplierCandidates.length + 1;
+    if (!idx || idx < 1 || idx > maxIdx) {
+      push({
+        role: "agent", text: `Please pick 1–${maxIdx} from the list above.`,
+        options: [...supplierCandidates.map((s, i) => `${i + 1}. ${s.name}`), `${maxIdx}. Source this from the market instead`],
+      });
+      return;
+    }
+    const chosen = idx <= supplierCandidates.length ? supplierCandidates[idx - 1] : null;
+    push({ role: "user", text: chosen ? chosen.name : "Source this from the market instead" });
+    if (!draft) return;
+    finishDecision(draft, null, chosen, "");
   }
 
   function confirmAndAskGaps() {
@@ -449,6 +495,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     if (step === "WELCOME") { await handleUnderstand(text); return; }
     if (step === "CATEGORY_PICK") { await handleCategoryPick(text); return; }
     if (step === "ITEM_PICK") { await handleItemPick(text); return; }
+    if (step === "SUPPLIER_PICK") { await handleSupplierPick(text); return; }
     if (step === "DECISION_CONFIRM") { handleDecisionConfirmText(text); return; }
     if (step === "COA_PICK") { confirmCoaStep(); return; }
     if (step === "GAP_FILL") { handleGapAnswer(text); return; }
