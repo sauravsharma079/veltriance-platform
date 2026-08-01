@@ -62,6 +62,7 @@ export default function SuppliersPage(){
         <div className="flex items-center gap-2">
           <a href="/api/developer/postman?module=suppliers" download className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 border border-gray-200 px-4 py-2 rounded-xl hover:bg-gray-50"><Code2 className="size-3.5"/>Postman Collection</a>
           <button onClick={()=>setShowUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button>
+          <Link href="/dashboard/suppliers/new" className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Plus className="size-3.5"/>Quick Add (Manual)</Link>
           <button onClick={()=>window.dispatchEvent(new Event("veltriance:onboard-supplier"))} className="flex items-center gap-2 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Onboard Supplier</button>
         </div>
       </div>

@@ -17,6 +17,7 @@ type CoaSegment = { id:string; position:number; name:string; description:string|
 type Coa = { id:string; name:string; code:string; companyCode:string|null; currency:string; taxType:string|null; taxRegNumber:string|null; billingCity:string|null; billingCountry:string|null; segments:CoaSegment[] };
 type CatalogItem = { id:string; sku:string; name:string; unitPrice:string; currency:string; category:string|null; supplierId:string|null; supplier:{name:string}|null; unit:string|null; leadDays:number|null; active:boolean };
 type Catalog = { id:string; name:string; type:string; status:string; description:string|null; supplierId:string|null; supplier:{name:string}|null; punchoutUrl:string|null; cxmlFromIdentity:string|null; cxmlToIdentity:string|null; _count:{items:number} };
+type ActiveSupplier = { id:string; name:string };
 
 const TABS = [
   { id:"users", label:"Users & Invites", icon:Users },
@@ -109,6 +110,9 @@ export default function AdminPage() {
   const [expandedCatalog, setExpandedCatalog] = useState<string|null>(null);
   const [showCatalogUpload, setShowCatalogUpload] = useState<string|null>(null);
   const [assistantSignal, setAssistantSignal] = useState(0);
+  const [activeSuppliers, setActiveSuppliers] = useState<ActiveSupplier[]>([]);
+  const [catalogForm, setCatalogForm] = useState({ name:"", type:"HOSTED", description:"", punchoutUrl:"", cxmlFromDomain:"", cxmlFromIdentity:"", cxmlToDomain:"", cxmlToIdentity:"", cxmlSenderDomain:"", cxmlSenderIdentity:"", cxmlSharedSecret:"" });
+  const [itemForm, setItemForm] = useState({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", unit:"", leadDays:"", supplierId:"" });
   const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"" });
   const [ruleForm, setRuleForm] = useState({ name:"", priority:"10", minAmount:"", maxAmount:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager" }] });
   const [lookupForm, setLookupForm] = useState({ type:"DEPARTMENT", code:"", label:"" });
@@ -118,7 +122,7 @@ export default function AdminPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError("");
-    const [u,s,r,f,l,ro,cg,ac,co,ca] = await Promise.all([
+    const [u,s,r,f,l,ro,cg,ac,co,ca,as] = await Promise.all([
       safeFetch("/api/admin/users"),
       safeFetch("/api/suppliers?status=PENDING_APPROVAL"),
       safeFetch("/api/admin/approval-rules"),
@@ -129,6 +133,7 @@ export default function AdminPage() {
       safeFetch("/api/admin/api-clients"),
       safeFetch("/api/admin/coa"),
       safeFetch("/api/catalogs"),
+      safeFetch("/api/suppliers?status=ACTIVE&limit=200"),
     ]);
     setUsers(u?.users ?? []);
     setSuppliers(s?.suppliers ?? []);
@@ -140,6 +145,7 @@ export default function AdminPage() {
     setApiClients(ac?.clients ?? []);
     setCoas(co?.coas ?? []);
     setCatalogs(ca?.catalogs ?? []);
+    setActiveSuppliers(as?.suppliers ?? []);
     setLoading(false);
   }, []);
 
@@ -187,6 +193,13 @@ export default function AdminPage() {
     await apiCall("/api/admin/coa", "POST", { type:"coa", ...coaForm });
     setCoaForm({ name:"", code:"", companyCode:"", currency:"INR", taxType:"", taxRegNumber:"", billingCity:"", billingCountry:"" });
   }
+  async function createCatalog() {
+    if (!catalogForm.name) { setError("Catalog name required"); return; }
+    if (catalogForm.type==="HOSTED" && !catalogForm.description) { setError("Description is required for hosted catalogs"); return; }
+    if (catalogForm.type==="PUNCHOUT" && !catalogForm.punchoutUrl) { setError("Punchout URL required"); return; }
+    await apiCall("/api/catalogs", "POST", catalogForm);
+    setCatalogForm({ name:"", type:"HOSTED", description:"", punchoutUrl:"", cxmlFromDomain:"", cxmlFromIdentity:"", cxmlToDomain:"", cxmlToIdentity:"", cxmlSenderDomain:"", cxmlSenderIdentity:"", cxmlSharedSecret:"" });
+  }
   async function loadCatalogItems(catalogId: string) {
     const d = await safeFetch(`/api/catalogs/${catalogId}/items?limit=200`);
     setCatalogItems(prev => ({ ...prev, [catalogId]: d?.items ?? [] }));
@@ -195,6 +208,21 @@ export default function AdminPage() {
     if (expandedCatalog === catalogId) { setExpandedCatalog(null); return; }
     setExpandedCatalog(catalogId);
     if (!catalogItems[catalogId]) loadCatalogItems(catalogId);
+  }
+  async function addItem(catalogId: string) {
+    if (!itemForm.sku||!itemForm.name||!itemForm.unitPrice||!itemForm.category||!itemForm.unit||!itemForm.leadDays||!itemForm.supplierId) {
+      setError("All item fields are required"); return;
+    }
+    setSaving(true); setError("");
+    try {
+      const r = await fetch(`/api/catalogs/${catalogId}/items`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(itemForm) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : JSON.stringify(d.error) || "Failed");
+      setItemForm({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", unit:"", leadDays:"", supplierId:"" });
+      await loadCatalogItems(catalogId);
+      await loadAll();
+    } catch (e: any) { setError(e.message); }
+    setSaving(false);
   }
   async function deleteItem(catalogId: string, itemId: string) {
     await fetch(`/api/catalogs/${catalogId}/items/${itemId}`, { method:"DELETE" });
@@ -374,6 +402,7 @@ export default function AdminPage() {
                 <h2 className="text-base font-semibold text-gray-900">Catalogs <span className="text-sm font-normal text-gray-400 ml-1">{catalogs.length} configured</span></h2>
                 <div className="flex items-center gap-2">
                   <a href="/api/developer/postman?module=catalogs" download className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 border border-gray-200 px-4 py-2 rounded-xl hover:bg-gray-50"><Code2 className="size-3.5"/>Postman Collection</a>
+                  <button onClick={()=>setModal("catalog")} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Plus className="size-3.5"/>Add Catalog</button>
                   <button onClick={()=>setAssistantSignal(s=>s+1)} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Sparkles className="size-3.5"/>Set up with Assistant</button>
                 </div>
               </div>
@@ -387,6 +416,7 @@ export default function AdminPage() {
                       <div className="size-9 bg-[#1A2A52]/8 rounded-xl flex items-center justify-center shrink-0"><Package className="size-4 text-[#1A2A52]"/></div>
                       <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900">{c.name}</p><p className="text-xs text-gray-400">{c.description||"—"} · {c._count.items} items</p></div>
                       <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${c.status==="ACTIVE"?"bg-emerald-50 text-emerald-700 border border-emerald-200":"bg-gray-100 text-gray-500"}`}>{c.status}</span>
+                      <button onClick={e=>{e.stopPropagation();setEditItem({...c});setModal("editCatalog");}} className="p-1.5 text-gray-400 hover:text-[#1A2A52] rounded-lg hover:bg-gray-100"><Edit2 className="size-3.5"/></button>
                       <button onClick={e=>{e.stopPropagation();setShowCatalogUpload(c.id);}} className="flex items-center gap-1 text-[10px] font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-2.5 py-1.5 rounded-lg hover:bg-[#1A2A52]/5"><Upload className="size-3"/>Upload CSV</button>
                       <button onClick={e=>{e.stopPropagation();deleteCatalog(c.id);}} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3.5"/></button>
                     </div>
@@ -395,6 +425,19 @@ export default function AdminPage() {
                         <div className="flex items-center justify-between mb-3">
                           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{(catalogItems[c.id]??[]).length} items</p>
                           <button onClick={()=>setAssistantSignal(s=>s+1)} className="flex items-center gap-1 text-[10px] font-semibold text-[#1A2A52] hover:underline"><Sparkles className="size-3"/>Add items with Assistant</button>
+                        </div>
+                        <div className="grid grid-cols-9 gap-2 mb-3">
+                          <input value={itemForm.sku} onChange={e=>setItemForm(f=>({...f,sku:e.target.value}))} placeholder="SKU" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <input value={itemForm.name} onChange={e=>setItemForm(f=>({...f,name:e.target.value}))} placeholder="Name" className="col-span-2 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <input value={itemForm.unitPrice} onChange={e=>setItemForm(f=>({...f,unitPrice:e.target.value}))} placeholder="Price" type="number" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <input value={itemForm.category} onChange={e=>setItemForm(f=>({...f,category:e.target.value}))} placeholder="Category" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <input value={itemForm.unit} onChange={e=>setItemForm(f=>({...f,unit:e.target.value}))} placeholder="Unit" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <input value={itemForm.leadDays} onChange={e=>setItemForm(f=>({...f,leadDays:e.target.value}))} placeholder="Lead days" type="number" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <select value={itemForm.supplierId} onChange={e=>setItemForm(f=>({...f,supplierId:e.target.value}))} className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]">
+                            <option value="">Supplier...</option>
+                            {activeSuppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                          <button onClick={()=>addItem(c.id)} disabled={saving} className="flex items-center justify-center gap-1 bg-[#1A2A52] text-white text-xs font-semibold rounded-lg hover:bg-[#243766] disabled:opacity-50"><Plus className="size-3"/>Add</button>
                         </div>
                         {(catalogItems[c.id]??[]).length===0?<p className="text-xs text-gray-400 text-center py-4">No items yet</p>:(
                           <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
@@ -424,6 +467,7 @@ export default function AdminPage() {
                       <div className="size-9 bg-[#C8A04D]/10 rounded-xl flex items-center justify-center shrink-0"><Zap className="size-4 text-[#C8A04D]"/></div>
                       <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900">{c.name}</p><p className="text-xs text-gray-400 truncate">{c.supplier?.name||c.cxmlToIdentity||"—"} · {c.punchoutUrl}</p></div>
                       <button onClick={()=>toggleCatalogStatus(c)} className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${c.status==="ACTIVE"?"bg-emerald-50 text-emerald-700 border border-emerald-200":"bg-gray-100 text-gray-500"}`}>{c.status}</button>
+                      <button onClick={()=>{setEditItem({...c});setModal("editCatalog");}} className="p-1.5 text-gray-400 hover:text-[#1A2A52] rounded-lg hover:bg-gray-100"><Edit2 className="size-3.5"/></button>
                       <button onClick={()=>deleteCatalog(c.id)} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3.5"/></button>
                     </div>
                   </div>
@@ -457,6 +501,37 @@ export default function AdminPage() {
       {modal==="group"&&<Modal title="Add Content Group" onClose={()=>{ setModal(null); setError(""); }}><Input label="Group Name *" value={groupForm.name} onChange={v=>setGroupForm(f=>({...f,name:v}))} placeholder="e.g. IT and Engineering"/><Input label="Description" value={groupForm.description} onChange={v=>setGroupForm(f=>({...f,description:v}))} placeholder="What this group covers"/><div><label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Color</label><input type="color" value={groupForm.color} onChange={e=>setGroupForm(f=>({...f,color:e.target.value}))} className="h-9 w-20 border border-gray-200 rounded-lg cursor-pointer"/></div><div className="flex gap-3 pt-2"><button onClick={createGroup} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Group"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
 
       {modal==="coa"&&<Modal title="Add Chart of Accounts" onClose={()=>{ setModal(null); setError(""); }}><Input label="Name *" value={coaForm.name} onChange={v=>setCoaForm(f=>({...f,name:v}))} placeholder="e.g. India Operations COA"/><Input label="Code *" value={coaForm.code} onChange={v=>setCoaForm(f=>({...f,code:v.toUpperCase()}))} placeholder="e.g. IN01"/><div className="grid grid-cols-2 gap-3"><Input label="Company Code" value={coaForm.companyCode} onChange={v=>setCoaForm(f=>({...f,companyCode:v}))} placeholder="e.g. ORG-IN"/><Input label="Currency" value={coaForm.currency} onChange={v=>setCoaForm(f=>({...f,currency:v.toUpperCase()}))} placeholder="INR"/></div><div className="grid grid-cols-2 gap-3"><Input label="Tax Type" value={coaForm.taxType} onChange={v=>setCoaForm(f=>({...f,taxType:v}))} placeholder="e.g. GST"/><Input label="Tax Reg. Number" value={coaForm.taxRegNumber} onChange={v=>setCoaForm(f=>({...f,taxRegNumber:v}))} placeholder="Optional"/></div><div className="grid grid-cols-2 gap-3"><Input label="Billing City" value={coaForm.billingCity} onChange={v=>setCoaForm(f=>({...f,billingCity:v}))} placeholder="Optional"/><Input label="Billing Country" value={coaForm.billingCountry} onChange={v=>setCoaForm(f=>({...f,billingCountry:v}))} placeholder="Optional"/></div><div className="flex gap-3 pt-2"><button onClick={createCoa} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create COA"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div></Modal>}
+
+      {modal==="catalog"&&<Modal title="Add Catalog" onClose={()=>{ setModal(null); setError(""); }}>
+        <Sel label="Type *" value={catalogForm.type} onChange={v=>setCatalogForm(f=>({...f,type:v}))} options={["HOSTED","PUNCHOUT"]}/>
+        <Input label="Name *" value={catalogForm.name} onChange={v=>setCatalogForm(f=>({...f,name:v}))} placeholder={catalogForm.type==="HOSTED"?"e.g. IT Hardware Catalog":"e.g. Dell Punchout"}/>
+        <Input label="Description *" value={catalogForm.description} onChange={v=>setCatalogForm(f=>({...f,description:v}))} placeholder="What this catalog covers"/>
+        {catalogForm.type==="PUNCHOUT"&&(<>
+          <Input label="Punchout URL *" value={catalogForm.punchoutUrl} onChange={v=>setCatalogForm(f=>({...f,punchoutUrl:v}))} placeholder="https://supplier.example.com/cxml/punchout"/>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="From Domain" value={catalogForm.cxmlFromDomain} onChange={v=>setCatalogForm(f=>({...f,cxmlFromDomain:v}))} placeholder="e.g. NetworkId"/>
+            <Input label="From Identity" value={catalogForm.cxmlFromIdentity} onChange={v=>setCatalogForm(f=>({...f,cxmlFromIdentity:v}))} placeholder="Your buyer identity"/>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="To Domain" value={catalogForm.cxmlToDomain} onChange={v=>setCatalogForm(f=>({...f,cxmlToDomain:v}))} placeholder="e.g. NetworkId"/>
+            <Input label="To Identity" value={catalogForm.cxmlToIdentity} onChange={v=>setCatalogForm(f=>({...f,cxmlToIdentity:v}))} placeholder="Supplier identity"/>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Sender Domain" value={catalogForm.cxmlSenderDomain} onChange={v=>setCatalogForm(f=>({...f,cxmlSenderDomain:v}))} placeholder="Usually same as From"/>
+            <Input label="Sender Identity" value={catalogForm.cxmlSenderIdentity} onChange={v=>setCatalogForm(f=>({...f,cxmlSenderIdentity:v}))} placeholder="Usually same as From"/>
+          </div>
+          <Input label="Shared Secret *" value={catalogForm.cxmlSharedSecret} onChange={v=>setCatalogForm(f=>({...f,cxmlSharedSecret:v}))} placeholder="Credential provided by the supplier" type="password"/>
+        </>)}
+        <div className="flex gap-3 pt-2"><button onClick={createCatalog} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Create Catalog"}</button><button onClick={()=>setModal(null)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
+
+      {modal==="editCatalog"&&editItem&&<Modal title="Edit Catalog" onClose={()=>{ setModal(null); setEditItem(null); setError(""); }}>
+        <Input label="Name" value={editItem.name||""} onChange={v=>setEditItem((p:any)=>({...p,name:v}))} placeholder="Catalog name"/>
+        <Input label="Description" value={editItem.description||""} onChange={v=>setEditItem((p:any)=>({...p,description:v}))} placeholder="What this catalog covers"/>
+        <Sel label="Status" value={editItem.status||""} onChange={v=>setEditItem((p:any)=>({...p,status:v}))} options={["ACTIVE","INACTIVE"]}/>
+        {editItem.type==="PUNCHOUT"&&<Input label="Punchout URL" value={editItem.punchoutUrl||""} onChange={v=>setEditItem((p:any)=>({...p,punchoutUrl:v}))} placeholder="https://supplier.example.com/cxml/punchout"/>}
+        <div className="flex gap-3 pt-2"><button onClick={()=>apiCall(`/api/catalogs/${editItem.id}`,"PATCH",{name:editItem.name,description:editItem.description,status:editItem.status,...(editItem.type==="PUNCHOUT"?{punchoutUrl:editItem.punchoutUrl}:{})})} disabled={saving} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{saving?"Saving...":"Save Changes"}</button><button onClick={()=>{ setModal(null); setEditItem(null); }} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button></div>
+      </Modal>}
 
       {showLookupUpload && (
         <CsvUploadModal
