@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { RequisitionStatus } from "@prisma/client";
+import { RequisitionStatus, Prisma } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { canActOnStep, STATUS_FOR_STEP } from "@/lib/approval-matrix";
@@ -136,6 +136,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             totalAmount: fullReq.totalAmount,
             deliveryAddress: fullReq.deliveryLocation,
             expectedDelivery: fullReq.requiredDate ?? undefined,
+            chartOfAccountId: fullReq.chartOfAccountId ?? undefined,
+            glCoding: (fullReq.glCoding as Prisma.InputJsonValue) ?? undefined,
             supplierEmail,
             paymentTerms,
             notes: fullReq.description ?? fullReq.businessJustification ?? undefined,

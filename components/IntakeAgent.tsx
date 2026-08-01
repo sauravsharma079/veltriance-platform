@@ -2,28 +2,37 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, X, Send, Loader2, CheckCircle2, AlertCircle, ChevronRight } from "lucide-react";
+import { Sparkles, X, Send, Loader2, CheckCircle2, AlertCircle, AlertTriangle, ChevronRight } from "lucide-react";
 import type { ExtractedRequirement } from "@/lib/ai/nlu";
 import type { IntakeDecision, CatalogMatch } from "@/lib/ai/intake-decision";
+import { GlCodingPanel } from "@/components/GlCodingPanel";
 
 type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: string; options?: string[] };
 
-type Step = "WELCOME" | "CATEGORY_PICK" | "ITEM_PICK" | "DECISION_CONFIRM" | "REVIEW" | "GAP_FILL" | "CONFIRM";
+type Step = "WELCOME" | "CATEGORY_PICK" | "ITEM_PICK" | "DECISION_CONFIRM" | "REVIEW" | "GAP_FILL" | "COA_PICK" | "CONFIRM";
 
-type GapField = "quantity" | "unitPrice" | "deliveryLocation" | "requiredDate" | "businessJustification";
+type GapField = "quantity" | "unitPrice" | "chartOfAccount" | "costCenter" | "deliveryLocation" | "requiredDate" | "businessJustification";
 const GAP_QUESTIONS: Record<GapField, string> = {
   quantity: "How many do you need?",
   unitPrice: "Do you know the expected **unit price**? (type 'skip' if not yet known — pricing can be finalized on the PO)",
+  chartOfAccount: "Which chart of accounts / GL coding should this be charged to?",
+  costCenter: "Which **cost center** should this be charged to?",
   deliveryLocation: "Where should this be delivered?",
   requiredDate: "When do you need this by? (e.g. 'next month', 'ASAP', a date)",
   businessJustification: "One line on why this is needed? (type 'skip' to skip)",
 };
 
+type LookupOption = { code: string; label: string };
+
 type Draft = {
   title: string; category: string | null; quantity: number | null; unitPrice: number | null;
   deliveryLocation: string | null; requiredDate: string | null; priority: string;
   businessJustification: string | null; supplierId?: string; supplierName?: string;
+  costCenter: string | null; chartOfAccountId: string; glCoding: Record<string, string>;
 };
+
+// Which required field a "not configured yet" popup refers to, and what to do once dismissed.
+type MissingConfig = { label: string; lookupType: string; queue: GapField[]; draft: Draft };
 
 function bold(text: string) {
   return String(text ?? "").split("\n").map((line, i) => {
@@ -49,6 +58,9 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
   const [gapQueue, setGapQueue] = useState<GapField[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [catalogCandidates, setCatalogCandidates] = useState<CatalogMatch[]>([]);
+  const [costCenters, setCostCenters] = useState<LookupOption[]>([]);
+  const [deliveryAddresses, setDeliveryAddresses] = useState<LookupOption[]>([]);
+  const [missingConfig, setMissingConfig] = useState<MissingConfig | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -58,6 +70,16 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [messages, open]);
+
+  // Loaded once per open — these are org-configured lists (Admin → Lookups), the
+  // same source of truth GlCodingPanel already uses for GL coding.
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/admin/lookups?type=COST_CENTER").then(r => r.json())
+      .then(d => setCostCenters((d.lookups ?? []).map((l: { code: string; label: string }) => ({ code: l.code, label: l.label }))));
+    fetch("/api/admin/lookups?type=DELIVERY_ADDRESS").then(r => r.json())
+      .then(d => setDeliveryAddresses((d.lookups ?? []).map((l: { code: string; label: string }) => ({ code: l.code, label: l.label }))));
+  }, [open]);
 
   const push = useCallback((...msgs: Msg[]) => setMessages(p => [...p, ...msgs]), []);
 
@@ -71,10 +93,20 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     const gaps: GapField[] = [];
     if (!d.quantity) gaps.push("quantity");
     if (!d.unitPrice && !d.supplierId) gaps.push("unitPrice");
-    if (!d.deliveryLocation) gaps.push("deliveryLocation");
+    // Coding/delivery are always asked explicitly (not inferred from free text) —
+    // they should come from real org configuration, not a guess.
+    gaps.push("chartOfAccount", "costCenter", "deliveryLocation");
     if (!d.requiredDate) gaps.push("requiredDate");
     if (!d.businessJustification) gaps.push("businessJustification");
     return gaps;
+  }
+
+  function pickFromList(text: string, list: LookupOption[]): LookupOption | null {
+    const bulletMatch = text.match(/^(\d+)\.\s/);
+    const pureNumber = /^\d+$/.test(text.trim());
+    const idx = bulletMatch ? parseInt(bulletMatch[1]) : pureNumber ? parseInt(text.trim()) : NaN;
+    if (idx >= 1 && idx <= list.length) return list[idx - 1];
+    return list.find(l => l.label.toLowerCase() === text.trim().toLowerCase()) ?? null;
   }
 
   // currentDraft is threaded through explicitly rather than read from `draft` state,
@@ -82,8 +114,46 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
   // are async, so reading `draft` here could see the pre-update value.
   function askNextGap(queue: GapField[], currentDraft: Draft) {
     if (queue.length === 0) { showConfirmWith(currentDraft); return; }
-    push({ role: "agent", text: `**${GAP_QUESTIONS[queue[0]]}**` });
+    const field = queue[0];
+
+    if (field === "chartOfAccount") {
+      push({ role: "agent", text: `**${GAP_QUESTIONS.chartOfAccount}**` });
+      setStep("COA_PICK");
+      return;
+    }
+
+    if (field === "deliveryLocation" || field === "costCenter") {
+      const list = field === "deliveryLocation" ? deliveryAddresses : costCenters;
+      if (list.length === 0) {
+        setMissingConfig({
+          label: field === "deliveryLocation" ? "Delivery Address" : "Cost Center",
+          lookupType: field === "deliveryLocation" ? "DELIVERY_ADDRESS" : "COST_CENTER",
+          queue, draft: currentDraft,
+        });
+        return;
+      }
+      push({ role: "agent", text: `**${GAP_QUESTIONS[field]}**`, options: list.map((l, i) => `${i + 1}. ${l.label}`) });
+      setStep("GAP_FILL");
+      return;
+    }
+
+    push({ role: "agent", text: `**${GAP_QUESTIONS[field]}**` });
     setStep("GAP_FILL");
+  }
+
+  function dismissMissingConfig() {
+    if (!missingConfig) return;
+    const { queue, draft: d } = missingConfig;
+    setMissingConfig(null);
+    askNextGap(queue.slice(1), d);
+  }
+
+  function confirmCoaStep() {
+    if (!draft) return;
+    push({ role: "user", text: draft.chartOfAccountId ? "Confirmed GL coding" : "No GL coding — skip" });
+    const rest = gapQueue.slice(1);
+    setGapQueue(rest);
+    askNextGap(rest, draft);
   }
 
   function presentDecision(baseDraft: Draft, dec: IntakeDecision, confidenceNote: string) {
@@ -196,6 +266,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       unitPrice: null, deliveryLocation: extracted.deliveryLocation,
       requiredDate: extracted.requiredDate, priority: extracted.priority,
       businessJustification: extracted.businessJustification,
+      costCenter: null, chartOfAccountId: "", glCoding: {},
     };
     setDraft(newDraft);
 
@@ -260,7 +331,8 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     const updated: Draft = { ...draft };
     if (field === "quantity") updated.quantity = skip ? null : parseInt(text.replace(/\D/g, "")) || null;
     if (field === "unitPrice") updated.unitPrice = skip ? null : parseFloat(text.replace(/[^\d.]/g, "")) || null;
-    if (field === "deliveryLocation") updated.deliveryLocation = skip ? null : text;
+    if (field === "deliveryLocation") updated.deliveryLocation = skip ? null : (pickFromList(text, deliveryAddresses)?.label ?? text);
+    if (field === "costCenter") updated.costCenter = skip ? null : (pickFromList(text, costCenters)?.label ?? text);
     if (field === "requiredDate") updated.requiredDate = skip ? null : text;
     if (field === "businessJustification") updated.businessJustification = skip ? null : text;
     setDraft(updated);
@@ -275,7 +347,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     const amount = d.unitPrice && d.quantity ? (d.unitPrice * d.quantity).toLocaleString() : "TBD";
     push({
       role: "agent",
-      text: `📋 **Ready to submit:**\n\n**${d.title}**\nCategory: ${d.category ?? "—"} · Qty: ${d.quantity ?? "—"} · Est. amount: ${amount}\nDelivery: ${d.deliveryLocation ?? "—"} · Needed: ${d.requiredDate ?? "—"} · Priority: ${d.priority}${d.supplierName ? `\nSupplier: ${d.supplierName}` : ""}${d.businessJustification ? `\nJustification: ${d.businessJustification}` : ""}\n\nShall I submit this for approval?`,
+      text: `📋 **Ready to submit:**\n\n**${d.title}**\nCategory: ${d.category ?? "—"} · Qty: ${d.quantity ?? "—"} · Est. amount: ${amount}\nDelivery: ${d.deliveryLocation ?? "—"} · Cost center: ${d.costCenter ?? "—"} · Needed: ${d.requiredDate ?? "—"} · Priority: ${d.priority}${d.chartOfAccountId && Object.keys(d.glCoding).length > 0 ? `\nGL coding: ${Object.values(d.glCoding).join(" - ")}` : ""}${d.supplierName ? `\nSupplier: ${d.supplierName}` : ""}${d.businessJustification ? `\nJustification: ${d.businessJustification}` : ""}\n\nShall I submit this for approval?`,
       options: ["✅ Submit for approval", "❌ Start over"],
     });
   }
@@ -291,6 +363,9 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
         deliveryLocation: draft.deliveryLocation, requiredDate: draft.requiredDate,
         businessJustification: draft.businessJustification, intakeSource: "CHATBOT",
         quantity: draft.quantity ?? 1, unitPrice: draft.unitPrice ?? 0, supplierName: draft.supplierName,
+        costCenter: draft.costCenter ?? undefined,
+        chartOfAccountId: draft.chartOfAccountId || undefined,
+        glCoding: Object.keys(draft.glCoding).length > 0 ? draft.glCoding : undefined,
       }
     );
     setMessages(p => p.filter(m => m.role !== "loading"));
@@ -365,6 +440,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     if (step === "CATEGORY_PICK") { await handleCategoryPick(text); return; }
     if (step === "ITEM_PICK") { await handleItemPick(text); return; }
     if (step === "DECISION_CONFIRM") { handleDecisionConfirmText(text); return; }
+    if (step === "COA_PICK") { confirmCoaStep(); return; }
     if (step === "GAP_FILL") { handleGapAnswer(text); return; }
     if (step === "CONFIRM") {
       push({ role: "user", text });
@@ -379,7 +455,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden" style={{ height: "min(680px, 90vh)" }}>
+      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden" style={{ height: "min(680px, 90vh)" }}>
         <div className="bg-gradient-to-r from-[#1A2A52] to-[#2D5A9B] px-5 py-4 flex items-center gap-3 shrink-0">
           <div className="size-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0"><Sparkles className="size-4 text-white" /></div>
           <div className="flex-1"><p className="text-sm font-bold text-white">Aria</p><p className="text-[10px] text-white/60">Conversational procurement intake</p></div>
@@ -417,6 +493,24 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
               )}
             </div>
           ))}
+          {step === "COA_PICK" && draft && (
+            <div className="flex gap-2.5 items-end">
+              <div className="size-7 rounded-full flex items-center justify-center shrink-0 mb-0.5 shadow-sm bg-[#1A2A52]"><Sparkles className="size-3.5 text-white" /></div>
+              <div className="flex-1 min-w-0 bg-white border border-gray-100 rounded-2xl rounded-bl-sm shadow-sm p-3">
+                <GlCodingPanel
+                  chartOfAccountId={draft.chartOfAccountId}
+                  glCoding={draft.glCoding}
+                  onCoaChange={id => setDraft(d => d ? { ...d, chartOfAccountId: id, glCoding: {} } : d)}
+                  onCodingChange={coding => setDraft(d => d ? { ...d, glCoding: coding } : d)}
+                  compact
+                />
+                <button onClick={confirmCoaStep} disabled={busy}
+                  className="mt-3 w-full bg-[#1A2A52] text-white text-xs font-medium py-2 rounded-lg hover:bg-[#243766] transition-colors disabled:opacity-50">
+                  Confirm & continue
+                </button>
+              </div>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
 
@@ -426,15 +520,32 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
               ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !busy) { e.preventDefault(); handleSend(); } }}
               placeholder={step === "WELCOME" ? "I need..." : "Type your response…"}
-              disabled={busy}
+              disabled={busy || !!missingConfig}
               className="flex-1 text-xs bg-transparent outline-none text-gray-800 placeholder:text-gray-400 disabled:opacity-40"
             />
-            <button onClick={() => handleSend()} disabled={!input.trim() || busy} className="size-7 bg-[#1A2A52] rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-[#243766] transition-colors shrink-0">
+            <button onClick={() => handleSend()} disabled={!input.trim() || busy || !!missingConfig} className="size-7 bg-[#1A2A52] rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-[#243766] transition-colors shrink-0">
               {busy ? <Loader2 className="size-3 text-white animate-spin" /> : <Send className="size-3 text-white" />}
             </button>
           </div>
           {confidence === "heuristic" && step !== "WELCOME" && <p className="text-[9px] text-amber-500 mt-1 text-center">No LLM connected — using keyword extraction. Set GROQ_API_KEY (free, no card) for real understanding.</p>}
         </div>
+
+        {missingConfig && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 rounded-2xl p-6">
+            <div className="bg-white rounded-2xl shadow-xl p-5 max-w-xs w-full text-center space-y-3">
+              <AlertTriangle className="size-8 text-amber-500 mx-auto" />
+              <p className="text-sm font-semibold text-gray-900">No {missingConfig.label.toLowerCase()} configured</p>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Your organization hasn&rsquo;t set up any {missingConfig.label.toLowerCase()} values yet.
+                Contact your Admin team to configure this under <strong>Admin → Lookups</strong> (type: {missingConfig.lookupType}).
+              </p>
+              <button onClick={dismissMissingConfig}
+                className="w-full bg-[#1A2A52] text-white text-xs font-medium py-2 rounded-lg hover:bg-[#243766] transition-colors">
+                OK, continue without it
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

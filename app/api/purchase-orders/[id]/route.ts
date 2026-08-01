@@ -20,6 +20,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
         lineItems: true,
         requisition: { select: { requisitionNumber: true, title: true } },
         createdBy: { select: { name: true, email: true } },
+        chartOfAccount: { select: { name: true, code: true } },
       },
     });
     if (!po) return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 type LI = { description:string; quantity:number; unitPrice:number; lineTotal:number; glAccount:string|null; };
-type PO = { id:string; poNumber:string; status:string; currency:string; subtotal:number; totalTax:number; totalAmount:number; deliveryLocation:string|null; requiredDate:string|null; issuedAt:string|null; paymentTerms:string|null; lineItems:LI[]; supplier:{ name:string; code:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null }|null; organization:{ name:string }|null; };
+type PO = { id:string; poNumber:string; status:string; currency:string; subtotal:number; totalTax:number; totalAmount:number; deliveryAddress:string|null; requiredDate:string|null; issuedAt:string|null; paymentTerms:string|null; lineItems:LI[]; supplier:{ name:string; code:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null }|null; organization:{ name:string }|null; chartOfAccount:{ name:string; code:string }|null; glCoding:Record<string,string>|null; };
 export default function PrintPage() {
   const { id } = useParams<{ id: string }>();
   const [po, setPo] = useState<PO|null>(null);
@@ -25,7 +25,13 @@ export default function PrintPage() {
         <div className="mb"><div className="lbl">Supplier</div><div className="val">{po.supplier?.name||"—"}</div><div className="sub">{po.supplier?.code||""}<br/>{po.supplier?.contactEmail||""}<br/>{po.supplier?.contactPhone||""}</div></div>
         <div className="mb"><div className="lbl">PO Details</div><div className="val">Issued: {dt(po.issuedAt)}</div><div className="sub">Required by: {dt(po.requiredDate)}<br/>Payment: {po.paymentTerms||po.supplier?.paymentTerms||"Net 30"}<br/>Currency: {po.currency||"INR"}</div></div>
       </div>
-      <div className="dlv"><div className="lbl">Delivery Location</div><div className="val">{po.deliveryLocation||"To be confirmed"}</div></div>
+      <div className="dlv">
+        <div className="lbl">Delivery Location</div><div className="val">{po.deliveryAddress||"To be confirmed"}</div>
+        {(po.chartOfAccount || (po.glCoding && Object.keys(po.glCoding).length > 0)) && <>
+          <div className="lbl" style={{marginTop:10}}>Chart of Accounts</div>
+          <div className="val">{po.chartOfAccount ? `${po.chartOfAccount.name} (${po.chartOfAccount.code})` : "—"}{po.glCoding && Object.keys(po.glCoding).length > 0 ? ` · GL: ${Object.values(po.glCoding).join(" - ")}` : ""}</div>
+        </>}
+      </div>
       <div className="tt">Line Items</div>
       <table><thead><tr><th className="c" style={{width:"4%"}}>#</th><th style={{width:"44%"}}>Description</th><th className="c" style={{width:"7%"}}>Qty</th><th className="r" style={{width:"15%"}}>Unit Price</th><th className="c" style={{width:"10%"}}>GL A/c</th><th className="r" style={{width:"15%"}}>Total</th></tr></thead>
       <tbody>{po.lineItems?.length>0?po.lineItems.map((li,i)=><tr key={i}><td className="c">{i+1}</td><td>{li.description||"—"}</td><td className="c">{li.quantity??1}</td><td className="r">{fmt(li.unitPrice??0)}</td><td className="c">{li.glAccount||"—"}</td><td className="r">{fmt(li.lineTotal??0)}</td></tr>):<tr><td colSpan={6} className="c" style={{color:"#9ca3af",padding:20}}>No line items</td></tr>}</tbody></table>

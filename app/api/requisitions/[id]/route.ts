@@ -24,6 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     include: {
       requestor: { select: { name: true, email: true, department: true } },
+      chartOfAccount: { select: { name: true, code: true } },
       lineItems: {
         include: { supplier: { select: { name: true } } },
         orderBy: { createdAt: "asc" },

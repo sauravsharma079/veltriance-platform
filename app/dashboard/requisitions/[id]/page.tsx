@@ -19,11 +19,14 @@ type Requisition = {
   businessUnit: string | null;
   department: string | null;
   project: string | null;
+  costCenter: string | null;
   deliveryLocation: string | null;
   requiredDate: string | null;
   businessJustification: string | null;
   customFieldAnswers: Record<string, string | number | boolean> | null;
   intakeSource: string;
+  chartOfAccount: { name: string; code: string } | null;
+  glCoding: Record<string, string> | null;
   requestor: { name: string; email: string; department: string | null };
   lineItems: {
     id: string; description: string; quantity: string; unitPrice: string; lineTotal: string;
@@ -106,8 +109,13 @@ export default function RequisitionDetailPage() {
         <InfoCard label="Total amount" value={`${req.currency} ${Number(req.totalAmount).toLocaleString()}`} />
         <InfoCard label="Delivery location" value={req.deliveryLocation} />
         <InfoCard label="Required by" value={req.requiredDate ? new Date(req.requiredDate).toLocaleDateString() : null} />
+        <InfoCard label="Cost center" value={req.costCenter} />
+        <InfoCard label="Chart of accounts" value={req.chartOfAccount ? `${req.chartOfAccount.name} (${req.chartOfAccount.code})` : null} />
         {req.businessUnit && <InfoCard label="Business unit" value={req.businessUnit} />}
         {req.department && <InfoCard label="Department" value={req.department} />}
+        {req.glCoding && Object.keys(req.glCoding).length > 0 && (
+          <InfoCard label="GL coding" value={Object.values(req.glCoding).join(" - ")} />
+        )}
       </div>
 
       {req.customFieldAnswers && Object.keys(req.customFieldAnswers).length > 0 && (

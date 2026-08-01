@@ -14,7 +14,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
 
     const po = await prisma.purchaseOrder.findFirst({
       where: { id, organizationId: org.id },
-      include: { lineItems: true, supplier: true, organization: { select: { name: true } } },
+      include: { lineItems: true, supplier: true, organization: { select: { name: true } }, chartOfAccount: { select: { name: true, code: true } } },
     });
     if (!po) return new NextResponse("PO not found", { status: 404 });
 
@@ -24,6 +24,9 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     const num = (po as any).poNumber ?? "PO-????";
     const deliveryLoc = (po as any).deliveryLocation ?? (po as any).deliveryAddress ?? "To be confirmed";
     const requiredDt  = (po as any).requiredDate ?? (po as any).expectedDelivery ?? null;
+    const coa = (po as any).chartOfAccount as { name: string; code: string } | null;
+    const glCoding = (po as any).glCoding as Record<string, string> | null;
+    const glCodingStr = glCoding && Object.keys(glCoding).length > 0 ? Object.values(glCoding).join(" - ") : null;
 
     const fmt = (n: any) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
     const dt  = (d: any) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -80,6 +83,8 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111827;backgro
 <div style="background:#f8f9fb;border-radius:6px;padding:12px;border-left:3px solid #C8A04D;margin-bottom:20px">
   <div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px">Delivery Location</div>
   <div style="font-size:11px;font-weight:600;color:#111">${deliveryLoc}</div>
+  ${coa || glCodingStr ? `<div style="font-size:8px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-top:10px;margin-bottom:5px">Chart of Accounts</div>
+  <div style="font-size:11px;font-weight:600;color:#111">${coa ? `${coa.name} (${coa.code})` : "—"}${glCodingStr ? ` &middot; GL: ${glCodingStr}` : ""}</div>` : ""}
 </div>
 <div style="font-size:9px;font-weight:700;color:#1A2A52;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Line Items</div>
 <table style="width:100%;border-collapse:collapse;margin-bottom:20px">

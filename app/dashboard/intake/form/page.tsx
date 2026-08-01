@@ -61,6 +61,8 @@ export default function IntakeFormPage() {
   // Reference data
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<LookupValue[]>([]);
+  const [costCenters, setCostCenters] = useState<LookupValue[]>([]);
+  const [deliveryAddresses, setDeliveryAddresses] = useState<LookupValue[]>([]);
   const [supplierDropdown, setSupplierDropdown] = useState<{ idx: number; open: boolean }>({ idx: -1, open: false });
 
   useEffect(() => {
@@ -70,8 +72,10 @@ export default function IntakeFormPage() {
     fetch("/api/admin/lookups")
       .then(r => r.json())
       .then(d => {
-        const all: LookupValue[] = d.lookups ?? [];
-        setCategories(all.filter((l: LookupValue & { type: string }) => (l as { type: string }).type === "CATEGORY"));
+        const all: (LookupValue & { type: string })[] = d.lookups ?? [];
+        setCategories(all.filter(l => l.type === "CATEGORY"));
+        setCostCenters(all.filter(l => l.type === "COST_CENTER"));
+        setDeliveryAddresses(all.filter(l => l.type === "DELIVERY_ADDRESS"));
       });
   }, []);
 
@@ -274,8 +278,28 @@ export default function IntakeFormPage() {
           <Section title="Delivery & Timing">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Delivery location">
-                <input value={header.deliveryLocation} onChange={e => setH("deliveryLocation", e.target.value)}
-                  className="input" placeholder="Noida office, Sector 62" />
+                {deliveryAddresses.length > 0 ? (
+                  <select value={header.deliveryLocation} onChange={e => setH("deliveryLocation", e.target.value)} className="input">
+                    <option value="">— Select delivery address —</option>
+                    {deliveryAddresses.map(d => <option key={d.code} value={d.label}>{d.label}</option>)}
+                  </select>
+                ) : (
+                  <p className="text-xs text-gray-400 italic py-2">
+                    No delivery addresses configured. Ask your admin to add them under Admin → Lookups (type: DELIVERY_ADDRESS).
+                  </p>
+                )}
+              </Field>
+              <Field label="Cost center">
+                {costCenters.length > 0 ? (
+                  <select value={header.costCenter} onChange={e => setH("costCenter", e.target.value)} className="input">
+                    <option value="">— Select cost center —</option>
+                    {costCenters.map(c => <option key={c.code} value={c.label}>{c.label}</option>)}
+                  </select>
+                ) : (
+                  <p className="text-xs text-gray-400 italic py-2">
+                    No cost centers configured. Ask your admin to add them under Admin → Lookups (type: COST_CENTER).
+                  </p>
+                )}
               </Field>
               <Field label="Required by date">
                 <input type="date" value={header.requiredDate} onChange={e => setH("requiredDate", e.target.value)} className="input" />
