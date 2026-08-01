@@ -179,7 +179,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
 
     push({ role: "loading", text: "Checking catalog and suppliers…" });
     setBusy(true);
-    const { ok, data } = await api<{ decision: IntakeDecision; error?: string }>("/api/intake/decision", "POST", { category, quantity: draft.quantity });
+    const { ok, data } = await api<{ decision: IntakeDecision; error?: string }>("/api/intake/decision", "POST", { category, quantity: draft.quantity, title: updatedDraft.title });
     setMessages(p => p.filter(m => m.role !== "loading"));
     setBusy(false);
     if (!ok) { push({ role: "error", text: data.error || "Something went wrong." }); return; }

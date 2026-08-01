@@ -21,11 +21,11 @@ export async function POST(req: NextRequest) {
     if (!profile || !organization || profile.organizationId !== organization.id)
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
-    const body = await req.json() as { category?: string; quantity?: number | null };
+    const body = await req.json() as { category?: string; quantity?: number | null; title?: string };
     if (!body.category) return NextResponse.json({ error: "category is required" }, { status: 400 });
 
     const extracted: ExtractedRequirement = {
-      title: "", category: body.category, quantity: body.quantity ?? null,
+      title: body.title ?? "", category: body.category, quantity: body.quantity ?? null,
       deliveryLocation: null, requiredDate: null, priority: "MEDIUM",
       businessJustification: null, confidence: "heuristic",
     };
