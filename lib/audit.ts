@@ -7,7 +7,7 @@ export type AuditAction =
 export type AuditEntity =
   | "REQUISITION" | "PURCHASE_ORDER" | "SUPPLIER" | "USER"
   | "LOOKUP" | "APPROVAL_RULE" | "CUSTOM_FIELD" | "CATALOG"
-  | "API_CLIENT" | "INTEGRATION";
+  | "API_CLIENT" | "INTEGRATION" | "COA";
 
 export interface AuditEvent {
   organizationId: string;

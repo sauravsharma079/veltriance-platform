@@ -91,6 +91,16 @@ export async function GET(req: NextRequest) {
       { name: "Bulk Invite Users", request: bearer(baseUrl, "/api/upload/users", "POST", {
         rows: [{ name: "Rajesh Kumar", email: "rajesh@yourcompany.com", role: "REQUESTOR", department: "Engineering" }],
       }) },
+      { name: "Bulk Upload Commodities", request: bearer(baseUrl, "/api/upload/commodities", "POST", {
+        rows: [
+          { code: "IT-HW", label: "IT Hardware", parentCode: "" },
+          { code: "IT-HW-COMP", label: "Computers", parentCode: "IT-HW" },
+        ],
+      }) },
+      { name: "Bulk Upload Chart of Accounts Values", request: bearer(baseUrl, "/api/upload/coa-values", "POST", {
+        coaId: "{{coaId}}",
+        rows: [{ segment: "1", code: "CC-101", description: "Engineering — Bengaluru" }],
+      }) },
     ],
   };
 
@@ -130,6 +140,7 @@ export async function GET(req: NextRequest) {
       { key: "clientSecret", value: "vlt_secret_xxx", type: "string" },
       { key: "accessToken",  value: "",               type: "string" },
       { key: "catalogId",    value: "",               type: "string" },
+      { key: "coaId",        value: "",               type: "string" },
     ],
     item,
   };

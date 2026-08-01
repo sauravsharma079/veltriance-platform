@@ -199,6 +199,8 @@ export default function AdminPage() {
   const [catalogItems, setCatalogItems] = useState<Record<string, CatalogItem[]>>({});
   const [expandedCatalog, setExpandedCatalog] = useState<string|null>(null);
   const [showCatalogUpload, setShowCatalogUpload] = useState<string|null>(null);
+  const [showCoaValueUpload, setShowCoaValueUpload] = useState<string|null>(null);
+  const [showCommodityUpload, setShowCommodityUpload] = useState(false);
   const [assistantSignal, setAssistantSignal] = useState(0);
   const [activeSuppliers, setActiveSuppliers] = useState<ActiveSupplier[]>([]);
   const [catalogForm, setCatalogForm] = useState({ name:"", type:"HOSTED", description:"", punchoutUrl:"", cxmlFromDomain:"", cxmlFromIdentity:"", cxmlToDomain:"", cxmlToIdentity:"", cxmlSenderDomain:"", cxmlSenderIdentity:"", cxmlSharedSecret:"" });
@@ -529,7 +531,10 @@ export default function AdminPage() {
             <div>
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-base font-semibold text-gray-900">Commodities <span className="text-sm font-normal text-gray-400 ml-1">{lookups.filter(l=>l.type==="COMMODITY").length} codes</span></h2>
-                <button onClick={()=>{ setCommodityForm({code:"",label:"",parentCode:""}); setModal("commodity"); }} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Top-Level Commodity</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={()=>setShowCommodityUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button>
+                  <button onClick={()=>{ setCommodityForm({code:"",label:"",parentCode:""}); setModal("commodity"); }} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Top-Level Commodity</button>
+                </div>
               </div>
               <p className="text-[11px] text-gray-400 mb-4">Three-level hierarchy — e.g. IT Hardware → Computers → Laptops.</p>
               {(() => {
@@ -597,6 +602,7 @@ export default function AdminPage() {
                     <div className="flex items-center gap-4 mb-6">
                       <div className="size-12 bg-[#1A2A52]/8 rounded-xl flex items-center justify-center"><BarChart2 className="size-6 text-[#1A2A52]"/></div>
                       <div className="flex-1"><p className="text-base font-bold text-gray-900">{c.code} — {c.name}</p><p className="text-xs text-gray-400 mt-0.5">{[c.taxType, c.companyCode?`Company Code: ${c.companyCode}`:null, `Currency: ${c.currency}`].filter(Boolean).join(" · ")}</p></div>
+                      {c.segments.length>0&&<button onClick={()=>setShowCoaValueUpload(c.id)} className="flex items-center gap-1 text-[10px] font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-2.5 py-1.5 rounded-lg hover:bg-[#1A2A52]/5"><Upload className="size-3"/>Upload Values</button>}
                       {c.segments.length<5&&<button onClick={()=>{ setSegmentForm({coaId:c.id,position:c.segments.length+1,name:"",description:"",isRequired:false,linkedLookupType:""}); setModal("segment"); }} className="flex items-center gap-1 text-[10px] font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-2.5 py-1.5 rounded-lg hover:bg-[#1A2A52]/5"><Plus className="size-3"/>Add Segment</button>}
                     </div>
                     {c.segments.length===0?<p className="text-xs text-gray-400">No segments configured</p>:(
@@ -960,6 +966,47 @@ export default function AdminPage() {
           }}
           onClose={() => setShowCatalogUpload(null)}
           onSuccess={() => { const id = showCatalogUpload; setShowCatalogUpload(null); loadAll(); if (id) loadCatalogItems(id); }}
+        />
+      )}
+
+      {showCoaValueUpload && (
+        <CsvUploadModal
+          config={{
+            title: "Upload Chart of Accounts Values",
+            description: "Bulk import segment values (e.g. cost centers, GL accounts) into this chart of accounts. Reference each row's segment by its position number or exact name.",
+            endpoint: "/api/upload/coa-values",
+            extraBody: { coaId: showCoaValueUpload },
+            templateName: "veltriance_coa_values_template",
+            headers: ["segment","code","description"],
+            requiredHeaders: ["segment","code","description"],
+            exampleRows: [
+              ["1","CC-101","Engineering — Bengaluru"],
+              ["1","CC-102","Sales — Mumbai"],
+              ["2","4500","Office Supplies"],
+            ],
+          }}
+          onClose={() => setShowCoaValueUpload(null)}
+          onSuccess={() => { setShowCoaValueUpload(null); loadAll(); }}
+        />
+      )}
+
+      {showCommodityUpload && (
+        <CsvUploadModal
+          config={{
+            title: "Upload Commodities",
+            description: "Bulk import the 3-level commodity hierarchy. Rows can be in any order — parents don't need to appear before their children.",
+            endpoint: "/api/upload/commodities",
+            templateName: "veltriance_commodities_template",
+            headers: ["code","label","parentCode"],
+            requiredHeaders: ["code","label"],
+            exampleRows: [
+              ["IT-HW","IT Hardware",""],
+              ["IT-HW-COMP","Computers","IT-HW"],
+              ["IT-HW-COMP-LAP","Laptops","IT-HW-COMP"],
+            ],
+          }}
+          onClose={() => setShowCommodityUpload(false)}
+          onSuccess={() => { setShowCommodityUpload(false); loadAll(); }}
         />
       )}
 
