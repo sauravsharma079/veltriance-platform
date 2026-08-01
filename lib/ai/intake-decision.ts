@@ -6,8 +6,13 @@ import type { ExtractedRequirement } from "@/lib/ai/nlu";
 // from the intake spec — built on data that actually exists in this database
 // (Catalog, CatalogItem, Supplier, ApprovalRule), not fabricated market data.
 
+export type CatalogMatch = { catalogId: string; itemId: string; itemName: string; sku: string; unitPrice: number; currency: string; supplierName: string | null };
+
 export type IntakeDecision = {
-  catalogMatch: { catalogId: string; itemId: string; itemName: string; sku: string; unitPrice: number; currency: string; supplierName: string | null } | null;
+  // Ranked candidates, not a single guess — when more than one item in the category
+  // plausibly matches what was typed, the requestor picks rather than us silently
+  // choosing (previously the cheapest item won regardless of relevance).
+  catalogMatches: CatalogMatch[];
   supplierMatches: { id: string; name: string; code: string | null; category: string | null; rating: number | null }[];
   needsSourcing: boolean;
   estimatedAmount: number | null;
@@ -59,10 +64,10 @@ export async function decideIntakeRoute(opts: {
       })
     : [];
 
-  let catalogItem: (typeof candidateItems)[number] | null = null;
+  let matchedItems: typeof candidateItems = [];
   if (candidateItems.length === 1) {
     // Unambiguous — only one item in the category, no relevance signal needed.
-    catalogItem = candidateItems[0];
+    matchedItems = candidateItems;
   } else if (candidateItems.length > 1 && keywords.length > 0) {
     const scored = candidateItems
       .map(item => ({
@@ -71,10 +76,10 @@ export async function decideIntakeRoute(opts: {
       }))
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score || Number(a.item.unitPrice) - Number(b.item.unitPrice));
-    catalogItem = scored[0]?.item ?? null;
+    matchedItems = scored.slice(0, 5).map(s => s.item);
   }
   // If there are multiple items in the category and none match the requested
-  // product by name, leave catalogItem null rather than guessing — the requestor
+  // product by name, leave matchedItems empty rather than guessing — the requestor
   // falls through to the supplier-match / needs-sourcing branch instead.
 
   const suppliers = category
@@ -86,8 +91,12 @@ export async function decideIntakeRoute(opts: {
       })
     : [];
 
-  const estimatedAmount = catalogItem && extracted.quantity
-    ? Number(catalogItem.unitPrice) * extracted.quantity
+  // Approval preview is estimated off the top-ranked match — the requestor still
+  // gets to pick a different one, but this keeps the amount/approval-path preview
+  // meaningful before they've chosen.
+  const primary = matchedItems[0] ?? null;
+  const estimatedAmount = primary && extracted.quantity
+    ? Number(primary.unitPrice) * extracted.quantity
     : null;
 
   let approvalPreview: IntakeDecision["approvalPreview"] = null;
@@ -97,13 +106,13 @@ export async function decideIntakeRoute(opts: {
   }
 
   return {
-    catalogMatch: catalogItem ? {
-      catalogId: catalogItem.catalogId, itemId: catalogItem.id, itemName: catalogItem.name,
-      sku: catalogItem.sku, unitPrice: Number(catalogItem.unitPrice), currency: catalogItem.currency,
-      supplierName: catalogItem.supplier?.name ?? null,
-    } : null,
+    catalogMatches: matchedItems.map(item => ({
+      catalogId: item.catalogId, itemId: item.id, itemName: item.name,
+      sku: item.sku, unitPrice: Number(item.unitPrice), currency: item.currency,
+      supplierName: item.supplier?.name ?? null,
+    })),
     supplierMatches: suppliers,
-    needsSourcing: !catalogItem && suppliers.length === 0,
+    needsSourcing: matchedItems.length === 0 && suppliers.length === 0,
     estimatedAmount,
     approvalPreview,
   };

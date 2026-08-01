@@ -4,11 +4,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles, X, Send, Loader2, CheckCircle2, AlertCircle, ChevronRight } from "lucide-react";
 import type { ExtractedRequirement } from "@/lib/ai/nlu";
-import type { IntakeDecision } from "@/lib/ai/intake-decision";
+import type { IntakeDecision, CatalogMatch } from "@/lib/ai/intake-decision";
 
 type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: string; options?: string[] };
 
-type Step = "WELCOME" | "CATEGORY_PICK" | "REVIEW" | "GAP_FILL" | "CONFIRM";
+type Step = "WELCOME" | "CATEGORY_PICK" | "ITEM_PICK" | "DECISION_CONFIRM" | "REVIEW" | "GAP_FILL" | "CONFIRM";
 
 type GapField = "quantity" | "unitPrice" | "deliveryLocation" | "requiredDate" | "businessJustification";
 const GAP_QUESTIONS: Record<GapField, string> = {
@@ -48,6 +48,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
   const [confidence, setConfidence] = useState<"llm" | "heuristic" | null>(null);
   const [gapQueue, setGapQueue] = useState<GapField[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [catalogCandidates, setCatalogCandidates] = useState<CatalogMatch[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,30 +88,93 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
 
   function presentDecision(baseDraft: Draft, dec: IntakeDecision, confidenceNote: string) {
     setDecision(dec);
+    setDraft(baseDraft);
+
+    if (dec.catalogMatches.length > 1) {
+      // Multiple items plausibly match what was typed — let the requester choose
+      // rather than us silently picking one.
+      setCatalogCandidates(dec.catalogMatches);
+      push({
+        role: "agent",
+        text: `**Category:** ${baseDraft.category}${confidenceNote}\n\nI found ${dec.catalogMatches.length} matching items in your catalog. Which one do you need?`,
+        options: [
+          ...dec.catalogMatches.map((m, i) => `${i + 1}. ${m.itemName} — ${m.currency} ${m.unitPrice}`),
+          `${dec.catalogMatches.length + 1}. None of these — source externally`,
+        ],
+      });
+      setStep("ITEM_PICK");
+      return;
+    }
+
+    applyDecisionMatch(baseDraft, dec, dec.catalogMatches[0] ?? null, confidenceNote);
+  }
+
+  function applyDecisionMatch(baseDraft: Draft, dec: IntakeDecision, match: CatalogMatch | null, confidenceNote: string) {
     const newDraft: Draft = {
       ...baseDraft,
-      unitPrice: dec.catalogMatch?.unitPrice ?? baseDraft.unitPrice,
-      supplierId: dec.catalogMatch ? undefined : dec.supplierMatches[0]?.id,
-      supplierName: dec.catalogMatch?.supplierName ?? dec.supplierMatches[0]?.name,
+      unitPrice: match?.unitPrice ?? baseDraft.unitPrice,
+      supplierId: match ? undefined : dec.supplierMatches[0]?.id,
+      supplierName: match?.supplierName ?? dec.supplierMatches[0]?.name,
     };
     setDraft(newDraft);
 
     const lines: string[] = [`**Category:** ${newDraft.category}${confidenceNote}`];
-    if (dec.catalogMatch) {
-      lines.push(`\n\n✅ **Found in your catalog:** ${dec.catalogMatch.itemName} (${dec.catalogMatch.sku}) — ${dec.catalogMatch.currency} ${dec.catalogMatch.unitPrice} from ${dec.catalogMatch.supplierName ?? "an existing supplier"}. I can buy this directly, no sourcing needed.`);
+    if (match) {
+      lines.push(`\n\n✅ **Found in your catalog:** ${match.itemName} (${match.sku}) — ${match.currency} ${match.unitPrice} from ${match.supplierName ?? "an existing supplier"}. I can buy this directly, no sourcing needed.`);
     } else if (dec.supplierMatches.length > 0) {
       lines.push(`\n\n✅ **Found ${dec.supplierMatches.length} existing supplier(s)** for this category: ${dec.supplierMatches.map(s => s.name).join(", ")}. I'll route this to ${dec.supplierMatches[0].name}.`);
     } else if (dec.needsSourcing) {
       lines.push(`\n\n⚠️ **No existing catalog item or supplier found** for this category. I'll submit the requisition, but procurement will need to onboard a supplier before it can be ordered.`);
     }
 
-    push({ role: "agent", text: lines.join(""), options: dec.needsSourcing ? ["🏢 Onboard a supplier now", "➡️ Continue anyway"] : undefined });
     setStep("REVIEW");
-    if (!dec.needsSourcing) {
-      const gaps = computeGaps(newDraft);
-      setGapQueue(gaps);
-      askNextGap(gaps, newDraft);
+    if (dec.needsSourcing) {
+      push({ role: "agent", text: lines.join(""), options: ["🏢 Onboard a supplier now", "➡️ Continue anyway"] });
+      return;
     }
+
+    // Require an explicit confirmation before moving on to the gap-filling
+    // questions, rather than silently chaining straight to "where should this
+    // be delivered" the moment a match is found.
+    push({ role: "agent", text: lines.join(""), options: match ? ["✅ Yes, use this item", "🔍 Not the right item"] : ["✅ Continue"] });
+    setStep("DECISION_CONFIRM");
+  }
+
+  function confirmAndAskGaps() {
+    if (!draft) return;
+    const gaps = computeGaps(draft);
+    setGapQueue(gaps);
+    askNextGap(gaps, draft);
+  }
+
+  async function handleItemPick(text: string) {
+    const bulletMatch = text.match(/^(\d+)\.\s/);
+    const pureNumber = /^\d+$/.test(text.trim());
+    const idx = bulletMatch ? parseInt(bulletMatch[1]) : pureNumber ? parseInt(text.trim()) : NaN;
+    const maxIdx = catalogCandidates.length + 1;
+    if (!idx || idx < 1 || idx > maxIdx) {
+      push({
+        role: "agent", text: `Please pick 1–${maxIdx} from the list above.`,
+        options: [...catalogCandidates.map((m, i) => `${i + 1}. ${m.itemName} — ${m.currency} ${m.unitPrice}`), `${maxIdx}. None of these — source externally`],
+      });
+      return;
+    }
+    const chosen = idx <= catalogCandidates.length ? catalogCandidates[idx - 1] : null;
+    push({ role: "user", text: chosen ? chosen.itemName : "None of these — source externally" });
+    if (!draft || !decision) return;
+    applyDecisionMatch(draft, decision, chosen, "");
+  }
+
+  function handleDecisionConfirmText(text: string) {
+    push({ role: "user", text });
+    const lower = text.toLowerCase();
+    if (lower.includes("yes") || lower.includes("continue")) { confirmAndAskGaps(); return; }
+    if (lower.includes("no") || lower.includes("not")) {
+      if (!draft || !decision) return;
+      applyDecisionMatch(draft, decision, null, "");
+      return;
+    }
+    push({ role: "agent", text: "Please choose one of the options above, or type 'yes' to continue." });
   }
 
   async function handleUnderstand(text: string) {
@@ -260,6 +324,17 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       askNextGap(gaps, draft);
       return;
     }
+    if (opt.includes("Yes, use this item") || opt === "✅ Continue") {
+      push({ role: "user", text: opt });
+      confirmAndAskGaps();
+      return;
+    }
+    if (opt.includes("Not the right item")) {
+      push({ role: "user", text: opt });
+      if (!draft || !decision) return;
+      applyDecisionMatch(draft, decision, null, "");
+      return;
+    }
     if (opt.includes("Submit for approval")) { push({ role: "user", text: opt }); handleSubmitRequisition(); return; }
     if (opt.includes("Start over")) {
       push({ role: "user", text: opt });
@@ -288,6 +363,8 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     setInput("");
     if (step === "WELCOME") { await handleUnderstand(text); return; }
     if (step === "CATEGORY_PICK") { await handleCategoryPick(text); return; }
+    if (step === "ITEM_PICK") { await handleItemPick(text); return; }
+    if (step === "DECISION_CONFIRM") { handleDecisionConfirmText(text); return; }
     if (step === "GAP_FILL") { handleGapAnswer(text); return; }
     if (step === "CONFIRM") {
       push({ role: "user", text });
