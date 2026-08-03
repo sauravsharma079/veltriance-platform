@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, FileText, MessageSquarePlus, Building2,
   CheckSquare, Settings, LogOut, ShoppingCart, Search,
-  Plug, Code2, Package,
+  Plug, Code2, Package, History,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { NotificationCenter } from "@/components/NotificationCenter";
@@ -25,6 +25,7 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; ro
 
 const CONFIG_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; roles: Role[] }[] = [
   { href: "/dashboard/integrations",   label: "Connections",  icon: Plug,     roles: ["PROCUREMENT","ADMIN"] },
+  { href: "/dashboard/history",        label: "Activity",     icon: History,  roles: ["PROCUREMENT","ADMIN"] },
   { href: "/dashboard/developer",      label: "Developer",    icon: Code2,    roles: ["ADMIN"] },
   { href: "/dashboard/admin",          label: "Admin",        icon: Settings, roles: ["ADMIN"] },
 ];

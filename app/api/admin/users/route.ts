@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
+import { logAudit } from "@/lib/audit";
 
 async function getCtx() {
   const sb = await createClient();
@@ -78,6 +79,12 @@ export async function POST(req: NextRequest) {
         where: { userId_chartOfAccountId: { userId: user.id, chartOfAccountId } }, create: { userId: user.id, chartOfAccountId }, update: {},
       })),
     ]);
+
+    await logAudit({
+      organizationId: admin.organizationId, userId: admin.profile.id, userName: admin.profile.name,
+      action: "CREATED", entity: "USER", entityId: user.id, entityLabel: user.name,
+      details: { role: user.role },
+    });
 
     return NextResponse.json({ user }, { status: 201 });
   } catch (e: any) {

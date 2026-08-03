@@ -81,6 +81,7 @@ model User {
   requisitionsCreated   Requisition[]    @relation("RequisitionRequestor")
   approvalSteps         ApprovalStep[]
   supplierRequests      Supplier[]       @relation("SupplierRequestedBy")
+  assignedSuppliers     Supplier[]       @relation("SupplierAssignedUser")
   purchaseOrdersCreated PurchaseOrder[]  @relation("POCreatedBy")
   userRoles             WorkspaceRoleMember[]
   contentGroupMembers   ContentGroupMember[]
@@ -162,6 +163,13 @@ model Supplier {
   erpSupplierId   String?        // vendor/supplier ID as created in the connected ERP, once synced
   erpSyncStatus   String?        // NOT_SYNCED | SYNCING | SYNCED | FAILED
   erpSyncedAt     DateTime?
+  // How POs for this supplier are transmitted by default — null means fall back
+  // to the PO-level default (EMAIL). cxmlEndpoint reuses the supplier's website
+  // field today for CXML catalogs; this is the PO transmission endpoint instead.
+  poTransmissionMethod PORoutingMethod?
+  cxmlEndpoint         String?
+  assignedUserId  String?
+  assignedUser    User?          @relation("SupplierAssignedUser", fields: [assignedUserId], references: [id])
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -179,6 +187,7 @@ model Supplier {
   @@index([category])
   @@index([name])
   @@index([organizationId])
+  @@index([assignedUserId])
   @@unique([organizationId, code])
 }
 
@@ -514,6 +523,9 @@ model PurchaseOrder {
   issuedAt         DateTime?
   acknowledgedAt   DateTime?
   expectedDelivery DateTime?
+  // 0 = original PO. Incremented each time a "Revise" (change order) is sent —
+  // re-transmits the updated PO to the supplier without needing a whole new PO row.
+  changeOrderNumber Int            @default(0)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 

@@ -1,9 +1,25 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Star, Mail, Phone, MapPin, BarChart3, Shield, RefreshCw, FileText, Upload, Trash2, Check, X as XIcon, Zap, ClipboardList } from "lucide-react";
+import { ArrowLeft, Star, Mail, Phone, MapPin, BarChart3, Shield, RefreshCw, FileText, Upload, Trash2, Check, X as XIcon, Zap, ClipboardList, Pencil } from "lucide-react";
+import { ActivityLog } from "@/components/ActivityLog";
 
-type Supplier = { id:string; name:string; code:string|null; category:string|null; tier:string|null; status:string; preferred:boolean; rating:number|null; riskScore:number|null; riskLevel:string|null; city:string|null; country:string|null; website:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null; currency:string|null; onTimeDelivery:number|null; qualityScore:number|null; invoiceAccuracy:number|null; responsivenessScore:number|null; onboardingStage:string|null; complianceScore:number|null; erpSyncStatus:string|null; erpSyncedAt:string|null; erpSupplierId:string|null; contacts?:{id:string;name:string;email:string|null;phone:string|null;role:string|null}[]; };
+type Supplier = { id:string; name:string; code:string|null; category:string|null; tier:string|null; status:string; preferred:boolean; rating:number|null; riskScore:number|null; riskLevel:string|null; city:string|null; country:string|null; addressLine1:string|null; addressLine2:string|null; state:string|null; postalCode:string|null; website:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null; currency:string|null; onTimeDelivery:number|null; qualityScore:number|null; invoiceAccuracy:number|null; responsivenessScore:number|null; onboardingStage:string|null; complianceScore:number|null; erpSyncStatus:string|null; erpSyncedAt:string|null; erpSupplierId:string|null; poTransmissionMethod:string|null; cxmlEndpoint:string|null; assignedUserId:string|null; assignedUser:{id:string;name:string}|null; contacts?:{id:string;name:string;email:string|null;phone:string|null;role:string|null}[]; };
+
+const EDIT_FIELDS = ["name","category","tier","contactName","contactEmail","contactPhone","addressLine1","addressLine2","city","state","postalCode","country","paymentTerms","currency","poTransmissionMethod","cxmlEndpoint","assignedUserId","preferred"] as const;
+type EditForm = Record<typeof EDIT_FIELDS[number], string | boolean>;
+
+function toEditForm(s: Supplier): EditForm {
+  return {
+    name: s.name ?? "", category: s.category ?? "", tier: s.tier ?? "",
+    contactName: s.contactName ?? "", contactEmail: s.contactEmail ?? "", contactPhone: s.contactPhone ?? "",
+    addressLine1: s.addressLine1 ?? "", addressLine2: s.addressLine2 ?? "", city: s.city ?? "",
+    state: s.state ?? "", postalCode: s.postalCode ?? "", country: s.country ?? "",
+    paymentTerms: s.paymentTerms ?? "", currency: s.currency ?? "USD",
+    poTransmissionMethod: s.poTransmissionMethod ?? "EMAIL", cxmlEndpoint: s.cxmlEndpoint ?? "",
+    assignedUserId: s.assignedUserId ?? "", preferred: s.preferred,
+  };
+}
 type RiskDomain = { domain:string; score:number; rationale:string[] };
 type RiskBreakdown = { computedAt:string; riskScore:number; riskLevel:string; complianceScore:number; domains:RiskDomain[]; unscored:{domain:string;reason:string}[] };
 type Doc = { id:string; type:string; name:string; status:string; expiryDate:string|null; rejectedNote:string|null };
@@ -24,12 +40,18 @@ export default function SupplierDetailPage(){
   const[busy,setBusy]=useState(false);
   const[docForm,setDocForm]=useState({type:"PAN_CARD",name:"",fileUrl:"",expiryDate:""});
   const[showAddDoc,setShowAddDoc]=useState(false);
+  const[canEdit,setCanEdit]=useState(false);
+  const[showEdit,setShowEdit]=useState(false);
+  const[editForm,setEditForm]=useState<EditForm|null>(null);
+  const[editError,setEditError]=useState("");
+  const[orgUsers,setOrgUsers]=useState<{id:string;name:string}[]>([]);
 
   async function load(){
     setLoading(true);setError("");
     try{
       const r=await fetch(`/api/suppliers/${id}`);const txt=await r.text();if(!txt.trim())throw new Error("Empty response");const d=JSON.parse(txt);if(!r.ok)throw new Error(d?.error||"Failed");
       setSupplier(d?.supplier||null);
+      setCanEdit(!!d?.canEdit);
       const [rb,dr,pr]=await Promise.all([
         fetch(`/api/suppliers/${id}/risk-assessment`).then(x=>x.ok?x.json():null).catch(()=>null),
         fetch(`/api/suppliers/${id}/documents`).then(x=>x.ok?x.json():null).catch(()=>null),
@@ -43,6 +65,21 @@ export default function SupplierDetailPage(){
     finally{setLoading(false);}
   }
   useEffect(()=>{load();},[id]);
+  useEffect(()=>{fetch("/api/admin/users").then(r=>r.json()).then(d=>setOrgUsers((d.users??[]).map((u:any)=>({id:u.id,name:u.name})))).catch(()=>{});},[]);
+
+  function openEdit(){ if(!supplier)return; setEditForm(toEditForm(supplier)); setEditError(""); setShowEdit(true); }
+
+  async function saveEdit(){
+    if(!editForm)return;
+    setBusy(true);setEditError("");
+    try{
+      const r=await fetch(`/api/suppliers/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(editForm)});
+      const d=await r.json();
+      if(!r.ok){setEditError(d?.error||"Failed to save");return;}
+      setShowEdit(false);
+      await load();
+    } finally{setBusy(false);}
+  }
 
   async function recomputeRisk(){
     setBusy(true);
@@ -88,6 +125,7 @@ export default function SupplierDetailPage(){
         <button onClick={()=>router.back()} className="size-8 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50"><ArrowLeft className="size-4 text-gray-500"/></button>
         <div className="flex-1"><h1 className="text-base font-bold text-gray-900 flex items-center gap-2">{supplier.name}{supplier.preferred&&<Star className="size-4 text-amber-400 fill-amber-400"/>}</h1><p className="text-xs text-gray-400">{supplier.code} · {supplier.category||"—"} {supplier.onboardingStage&&`· ${supplier.onboardingStage.replace(/_/g," ")}`}</p></div>
         <span className={`text-[10px] font-semibold px-3 py-1 rounded-full border ${sC}`}>{supplier.status==="PENDING_APPROVAL"?"Pending":supplier.status}</span>
+        {canEdit&&<button onClick={openEdit} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-3 py-1.5 rounded-xl hover:bg-[#1A2A52]/5"><Pencil className="size-3.5"/>Edit</button>}
         <button onClick={load} className="size-8 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50"><RefreshCw className={`size-3.5 text-gray-400 ${busy?"animate-spin":""}`}/></button>
       </div>
       {error&&<div className="mx-8 mt-4 bg-red-50 border border-red-200 text-red-700 text-xs px-4 py-2.5 rounded-xl">{error}</div>}
@@ -157,7 +195,8 @@ export default function SupplierDetailPage(){
         </div>
         <div className="space-y-5">
           <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">Contact Info</p><div className="space-y-3">{supplier.contactName&&<div className="flex items-center gap-2 text-xs text-gray-700"><Shield className="size-3.5 text-gray-400"/>{supplier.contactName}</div>}{supplier.contactEmail&&<div className="flex items-center gap-2 text-xs text-gray-700"><Mail className="size-3.5 text-gray-400"/>{supplier.contactEmail}</div>}{supplier.contactPhone&&<div className="flex items-center gap-2 text-xs text-gray-700"><Phone className="size-3.5 text-gray-400"/>{supplier.contactPhone}</div>}{(supplier.city||supplier.country)&&<div className="flex items-center gap-2 text-xs text-gray-700"><MapPin className="size-3.5 text-gray-400"/>{[supplier.city,supplier.country].filter(Boolean).join(", ")}</div>}</div></div>
-          <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">Commercial</p><div className="space-y-2.5">{[["Tier",supplier.tier],["Category",supplier.category],["Currency",supplier.currency],["Payment Terms",supplier.paymentTerms]].map(([l,v])=>v?(<div key={String(l)} className="flex justify-between"><span className="text-[10px] text-gray-400">{l}</span><span className="text-[10px] font-medium text-gray-900">{v}</span></div>):null)}</div></div>
+          <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">Commercial</p><div className="space-y-2.5">{[["Tier",supplier.tier],["Category",supplier.category],["Currency",supplier.currency],["Payment Terms",supplier.paymentTerms],["PO Transmission",supplier.poTransmissionMethod],["Assigned to",supplier.assignedUser?.name]].map(([l,v])=>v?(<div key={String(l)} className="flex justify-between"><span className="text-[10px] text-gray-400">{l}</span><span className="text-[10px] font-medium text-gray-900">{v}</span></div>):null)}</div></div>
+          <ActivityLog entity="SUPPLIER" entityId={id} title="Activity" />
 
           {profile&&<div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4 flex items-center gap-1.5"><ClipboardList className="size-3.5"/>Onboarding Profile</p>
@@ -180,6 +219,73 @@ export default function SupplierDetailPage(){
           </div>
         </div>
       </div>
+
+      {showEdit&&editForm&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={e=>e.target===e.currentTarget&&setShowEdit(false)}>
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+            <p className="text-sm font-bold text-gray-900 mb-4">Edit supplier</p>
+            {editError&&<p className="text-xs text-red-600 mb-3">{editError}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <EF label="Name" value={editForm.name as string} onChange={v=>setEditForm(f=>f&&({...f,name:v}))}/>
+              <EF label="Category" value={editForm.category as string} onChange={v=>setEditForm(f=>f&&({...f,category:v}))}/>
+              <EF label="Tier" value={editForm.tier as string} onChange={v=>setEditForm(f=>f&&({...f,tier:v}))}/>
+              <EF label="Currency" value={editForm.currency as string} onChange={v=>setEditForm(f=>f&&({...f,currency:v}))}/>
+              <EF label="Contact name" value={editForm.contactName as string} onChange={v=>setEditForm(f=>f&&({...f,contactName:v}))}/>
+              <EF label="Contact email" value={editForm.contactEmail as string} onChange={v=>setEditForm(f=>f&&({...f,contactEmail:v}))}/>
+              <EF label="Contact phone" value={editForm.contactPhone as string} onChange={v=>setEditForm(f=>f&&({...f,contactPhone:v}))}/>
+              <EF label="Payment terms" value={editForm.paymentTerms as string} onChange={v=>setEditForm(f=>f&&({...f,paymentTerms:v}))}/>
+              <EF label="Address line 1" value={editForm.addressLine1 as string} onChange={v=>setEditForm(f=>f&&({...f,addressLine1:v}))}/>
+              <EF label="Address line 2" value={editForm.addressLine2 as string} onChange={v=>setEditForm(f=>f&&({...f,addressLine2:v}))}/>
+              <EF label="City" value={editForm.city as string} onChange={v=>setEditForm(f=>f&&({...f,city:v}))}/>
+              <EF label="State" value={editForm.state as string} onChange={v=>setEditForm(f=>f&&({...f,state:v}))}/>
+              <EF label="Postal code" value={editForm.postalCode as string} onChange={v=>setEditForm(f=>f&&({...f,postalCode:v}))}/>
+              <EF label="Country" value={editForm.country as string} onChange={v=>setEditForm(f=>f&&({...f,country:v}))}/>
+            </div>
+
+            <div className="h-px bg-gray-100 my-4"/>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">PO transmission</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-500 mb-1">Method</label>
+                <select value={editForm.poTransmissionMethod as string} onChange={e=>setEditForm(f=>f&&({...f,poTransmissionMethod:e.target.value}))} className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#1A2A52]">
+                  <option value="EMAIL">Email</option>
+                  <option value="CXML">cXML</option>
+                  <option value="MANUAL">Manual</option>
+                </select>
+              </div>
+              {editForm.poTransmissionMethod==="CXML"&&<EF label="cXML endpoint URL" value={editForm.cxmlEndpoint as string} onChange={v=>setEditForm(f=>f&&({...f,cxmlEndpoint:v}))}/>}
+            </div>
+
+            <div className="h-px bg-gray-100 my-4"/>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">Ownership</p>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-500 mb-1">Assigned user (can always edit this record)</label>
+              <select value={editForm.assignedUserId as string} onChange={e=>setEditForm(f=>f&&({...f,assignedUserId:e.target.value}))} className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#1A2A52]">
+                <option value="">— None —</option>
+                {orgUsers.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 mt-3">
+              <input type="checkbox" checked={editForm.preferred as boolean} onChange={e=>setEditForm(f=>f&&({...f,preferred:e.target.checked}))}/>
+              <span className="text-xs text-gray-700">Preferred supplier</span>
+            </label>
+
+            <div className="flex gap-3 pt-5">
+              <button onClick={saveEdit} disabled={busy} className="flex-1 bg-[#1A2A52] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#243766] disabled:opacity-50">{busy?"Saving...":"Save changes"}</button>
+              <button onClick={()=>setShowEdit(false)} className="px-5 py-2.5 text-sm text-gray-500 border border-gray-200 rounded-xl">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EF({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){
+  return (
+    <div>
+      <label className="block text-[10px] font-medium text-gray-500 mb-1">{label}</label>
+      <input value={value||""} onChange={e=>onChange(e.target.value)} className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs outline-none focus:border-[#1A2A52]"/>
     </div>
   );
 }

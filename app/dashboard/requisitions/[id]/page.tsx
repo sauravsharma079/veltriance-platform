@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Check, X, Clock, ShoppingCart, Send } from "lucide-react";
+import { ActivityLog } from "@/components/ActivityLog";
 
 type Requisition = {
   id: string;
@@ -271,6 +272,10 @@ export default function RequisitionDetailPage() {
           Waiting on {pendingStep.stepType.toLowerCase()} approval — this isn&apos;t your step to act on.
         </div>
       )}
+
+      <div className="mt-6">
+        <ActivityLog entity="REQUISITION" entityId={id} title="Activity" />
+      </div>
     </div>
   );
 }

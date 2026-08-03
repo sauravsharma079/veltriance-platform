@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveReadActor } from "@/lib/api-auth";
+import { logAudit } from "@/lib/audit";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -95,6 +96,11 @@ export async function POST(req: NextRequest) {
     const catalog = await prisma.catalog.create({
       data: { organizationId: ctx.organization.id, ...d },
       select: CATALOG_SELECT,
+    });
+    await logAudit({
+      organizationId: ctx.organization.id, userId: ctx.profile.id, userName: ctx.profile.name,
+      action: "CREATED", entity: "CATALOG", entityId: catalog.id, entityLabel: catalog.name,
+      details: { type: catalog.type },
     });
     return NextResponse.json({ catalog }, { status: 201 });
   } catch (e: any) {

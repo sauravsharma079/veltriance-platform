@@ -70,10 +70,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (body.supplierEmail !== undefined) updateData.supplierEmail = body.supplierEmail;
     if (body.notes !== undefined)        updateData.notes         = body.notes;
     if (body.paymentTerms !== undefined) updateData.paymentTerms  = body.paymentTerms;
-    if (body.deliveryAddress !== undefined) {
-      updateData.deliveryLocation = body.deliveryAddress;
-      updateData.deliveryAddress  = body.deliveryAddress;
-    }
+    if (body.deliveryAddress !== undefined) updateData.deliveryAddress = body.deliveryAddress;
     if (body.status !== undefined)       updateData.status        = body.status;
 
     const purchaseOrder = await prisma.purchaseOrder.update({

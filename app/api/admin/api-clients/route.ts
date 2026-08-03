@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
+import { logAudit } from "@/lib/audit";
 import crypto from "crypto";
 
 export async function GET() {
@@ -75,6 +76,11 @@ export async function POST(req: NextRequest) {
     // Attach _count so page renders correctly
     client._count = { tokens: 0 };
 
+    await logAudit({
+      organizationId: admin.organizationId, userId: admin.profile.id, userName: admin.profile.name,
+      action: "CREATED", entity: "API_CLIENT", entityId: client.id, entityLabel: name.trim(),
+    });
+
     // Return both nested and flat format — page uses d.client_id and d.client_secret
     return NextResponse.json({
       client,
@@ -92,7 +98,14 @@ export async function DELETE(req: NextRequest) {
     const admin = await requireAdmin();
     if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const { id } = await req.json();
+    const existing = await prisma.apiClient.findFirst({ where: { id, organizationId: admin.organizationId } });
     await prisma.apiClient.delete({ where: { id, organizationId: admin.organizationId } });
+    if (existing) {
+      await logAudit({
+        organizationId: admin.organizationId, userId: admin.profile.id, userName: admin.profile.name,
+        action: "DELETED", entity: "API_CLIENT", entityId: id, entityLabel: existing.name,
+      });
+    }
     return NextResponse.json({ ok: true });
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
 }

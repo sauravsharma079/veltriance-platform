@@ -2,7 +2,8 @@
 import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
 import { AdminAgent } from "@/components/AdminAgent";
 import { useState, useEffect, useCallback } from "react";
-import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers } from "lucide-react";
+import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers, Clock } from "lucide-react";
+import { ActivityLog } from "@/components/ActivityLog";
 
 type User = { id:string; name:string; email:string; role:string; department:string|null; inviteStatus:string; jobTitle:string|null; employeeId:string|null; managerId:string|null; manager:{id:string;name:string}|null; businessUnit:string|null; costCenter:string|null; addressLine1:string|null; addressLine2:string|null; city:string|null; state:string|null; postalCode:string|null; country:string|null; userRoles:{role:{id:string;name:string}}[]; contentGroupMembers:{contentGroup:{id:string;name:string}}[]; chartOfAccountAccess:{chartOfAccount:{id:string;code:string}}[] };
 type Supplier = { id:string; name:string; code:string; status:string; category:string|null; contactEmail:string|null; onboardingStage:string|null };
@@ -34,7 +35,10 @@ const TABS = [
   { id:"coa", label:"Chart of Accounts", icon:BarChart2 },
   { id:"catalogs", label:"Catalogs", icon:Package },
   { id:"api", label:"API Clients", icon:Code2 },
+  { id:"activity", label:"Activity", icon:Clock },
 ];
+
+const ACTIVITY_ENTITIES = ["", "REQUISITION","PURCHASE_ORDER","SUPPLIER","USER","ROLE","LOOKUP","APPROVAL_RULE","CATALOG","API_CLIENT","COA"];
 
 const ROLES_LIST = ["ADMIN","PROCUREMENT","APPROVER","REQUESTOR","VIEWER"];
 const STEP_TYPES = ["MANAGER","DIRECTOR","FINANCE","EXECUTIVE","PROCUREMENT"];
@@ -177,6 +181,7 @@ function Modal({ title, onClose, children }: { title:string; onClose:()=>void; c
 
 export default function AdminPage() {
   const [tab, setTab] = useState("users");
+  const [activityFilter, setActivityFilter] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
@@ -702,6 +707,21 @@ export default function AdminPage() {
               {apiClients.length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No API clients</div>:(
                 <div className="space-y-3">{apiClients.map(c=>(<div key={c.id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"><div className="flex items-center gap-3 mb-3"><div className="size-9 bg-[#1A2A52]/8 rounded-xl flex items-center justify-center"><Code2 className="size-4 text-[#1A2A52]"/></div><div className="flex-1"><p className="text-sm font-semibold text-gray-900">{c.name}</p><p className="text-xs text-gray-400">{c.description}</p></div><span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full ${c.active?"bg-emerald-50 text-emerald-700 border border-emerald-200":"bg-gray-100 text-gray-500"}`}>{c.active?"Active":"Inactive"}</span></div><div className="flex items-center gap-2"><span className="text-[10px] text-gray-400 font-mono bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg">{c.clientId}</span><div className="flex gap-1 ml-auto">{(c.scopes||[]).map(s=><span key={s} className="text-[9px] bg-[#1A2A52]/8 text-[#1A2A52] px-1.5 py-0.5 rounded font-medium">{s}</span>)}</div></div></div>))}</div>
               )}
+            </div>
+          )}
+
+          {tab==="activity"&&(
+            <div>
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-base font-semibold text-gray-900">Activity</h2>
+                <div className="flex items-center gap-2">
+                  <select value={activityFilter} onChange={e=>setActivityFilter(e.target.value)} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-[#1A2A52]">
+                    {ACTIVITY_ENTITIES.map(en=><option key={en} value={en}>{en?en.replace(/_/g," "):"All modules"}</option>)}
+                  </select>
+                  <a href="/dashboard/history" className="text-xs font-medium text-[#1A2A52] hover:underline whitespace-nowrap">Full log, search &amp; filters →</a>
+                </div>
+              </div>
+              <ActivityLog key={activityFilter} entity={activityFilter||undefined} limit={100} title={activityFilter?activityFilter.replace(/_/g," "):"All activity"}/>
             </div>
           )}
 

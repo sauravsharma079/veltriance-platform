@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveReadActor, parsePagination, pagMeta } from "@/lib/api-auth";
+import { logAudit } from "@/lib/audit";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -76,11 +77,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!supplier) return NextResponse.json({ error: "Supplier not found" }, { status: 422 });
 
     const { sku, ...updateData } = d;
+    const wasExisting = await prisma.catalogItem.findUnique({ where: { catalogId_sku: { catalogId: id, sku } }, select: { id: true } });
     const item = await prisma.catalogItem.upsert({
       where: { catalogId_sku: { catalogId: id, sku } },
       update: updateData,
       create: { catalogId: id, sku, ...updateData },
       include: { supplier: { select: { name: true } } },
+    });
+    await logAudit({
+      organizationId: adminCtx.organization.id, userId: adminCtx.profile.id, userName: adminCtx.profile.name,
+      action: wasExisting ? "UPDATED" : "CREATED", entity: "CATALOG", entityId: id, entityLabel: `${catalog.name} — ${item.name}`,
+      details: { sku, catalogItemId: item.id },
     });
     return NextResponse.json({ item }, { status: 201 });
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }

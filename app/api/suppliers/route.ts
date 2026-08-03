@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { logAudit } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,19 +34,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ suppliers: [] });
   }
 }
-export async function PATCH(req: NextRequest) {
-  try {
-    const sb = await createClient();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
-    if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const body = await req.json();
-    const { id, ...data } = body;
-    const supplier = await prisma.supplier.update({ where: { id, organizationId: org.id }, data });
-    return NextResponse.json({ supplier });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
-}
 export async function POST(req: NextRequest) {
   try {
     const sb = await createClient();
@@ -64,6 +52,10 @@ export async function POST(req: NextRequest) {
         contactName: body.contactName ?? null, category: body.category ?? null,
         city: body.city ?? null, contactPhone: body.contactPhone ?? null,
         country: body.country ?? "India", currency: body.currency ?? "INR", requestedById: profile.id },
+    });
+    await logAudit({
+      organizationId: org.id, userId: profile.id, userName: profile.name,
+      action: "CREATED", entity: "SUPPLIER", entityId: supplier.id, entityLabel: supplier.name,
     });
     return NextResponse.json({ supplier }, { status: 201 });
   } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }

@@ -5,7 +5,7 @@ export type AuditAction =
   | "REJECTED" | "SENT" | "CANCELLED" | "UPLOADED" | "LOGIN" | "VIEWED";
 
 export type AuditEntity =
-  | "REQUISITION" | "PURCHASE_ORDER" | "SUPPLIER" | "USER"
+  | "REQUISITION" | "PURCHASE_ORDER" | "SUPPLIER" | "USER" | "ROLE"
   | "LOOKUP" | "APPROVAL_RULE" | "CUSTOM_FIELD" | "CATALOG"
   | "API_CLIENT" | "INTEGRATION" | "COA";
 
@@ -70,7 +70,10 @@ export async function logAudit(event: AuditEvent): Promise<void> {
   }
 }
 
-export async function getAuditLogs(organizationId: string, opts?: { limit?: number; entity?: string; action?: string }) {
+export async function getAuditLogs(
+  organizationId: string,
+  opts?: { limit?: number; entity?: string; entityId?: string; action?: string }
+) {
   try {
     const integration = await prisma.integration.findFirst({ where: { organizationId, key: "audit_log" } });
     if (!integration) return [];
@@ -79,6 +82,10 @@ export async function getAuditLogs(organizationId: string, opts?: { limit?: numb
         integrationId: integration.id,
         ...(opts?.entity ? { event: { contains: opts.entity } } : {}),
         ...(opts?.action ? { event: { endsWith: opts.action } } : {}),
+        // entityId lives inside the meta JSON blob, not a real column — filter
+        // on it via Prisma's JSON path query (Postgres jsonb). Used to scope the
+        // ActivityLog panel on a single requisition/supplier/PO's detail page.
+        ...(opts?.entityId ? { meta: { path: ["entityId"], equals: opts.entityId } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: opts?.limit || 100,

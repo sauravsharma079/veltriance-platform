@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { canActOnStep, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { generatePONumber } from "@/lib/po-number";
+import { sendPurchaseOrder } from "@/lib/po-send";
+import { logAudit } from "@/lib/audit";
 
 const actionSchema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
@@ -69,6 +71,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }),
       prisma.requisition.update({ where: { id }, data: { status: "REJECTED" } }),
     ]);
+    await logAudit({
+      organizationId: organization.id, userId: profile.id, userName: profile.name,
+      action: "REJECTED", entity: "REQUISITION", entityId: id, entityLabel: requisition.requisitionNumber,
+      details: { comment: parsed.data.comment },
+    });
     return NextResponse.json({ status: "REJECTED" });
   }
 
@@ -80,6 +87,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await prisma.approvalStep.update({
       where: { id: myStep.id },
       data: { status: "APPROVED", comment: parsed.data.comment, decidedAt: new Date(), approverId: profile.id },
+    });
+    await logAudit({
+      organizationId: organization.id, userId: profile.id, userName: profile.name,
+      action: "APPROVED", entity: "REQUISITION", entityId: id, entityLabel: requisition.requisitionNumber,
+      details: { comment: parsed.data.comment, step: myStep.stepType, waitingOn: otherPendingInGroup.length },
     });
     return NextResponse.json({ status: requisition.status, waitingOn: otherPendingInGroup.length });
   }
@@ -104,15 +116,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: { status: newStatus },
     }),
   ]);
+  await logAudit({
+    organizationId: organization.id, userId: profile.id, userName: profile.name,
+    action: "APPROVED", entity: "REQUISITION", entityId: id, entityLabel: requisition.requisitionNumber,
+    details: { comment: parsed.data.comment, step: myStep.stepType, fullyApproved: isFullyApproved },
+  });
 
-  // When fully approved, auto-create a PO draft so procurement can review and send it.
+  // When fully approved, create the PO and transmit it to the supplier right
+  // away — no manual "review the draft, then send" step. If transmission
+  // can't complete (e.g. no supplier email on file), it's left as DRAFT so
+  // procurement can fix that and send it manually from the PO page.
   if (isFullyApproved) {
     try {
       const fullReq = await prisma.requisition.findUnique({
         where: { id },
         include: {
           lineItems: {
-            include: { supplier: { select: { contactEmail: true, paymentTerms: true } } },
+            include: { supplier: { select: { contactEmail: true, paymentTerms: true, poTransmissionMethod: true, cxmlEndpoint: true } } },
           },
         },
       });
@@ -122,8 +142,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const supplierId = primaryLine?.supplierId ?? undefined;
         const supplierEmail = primaryLine?.supplier?.contactEmail ?? undefined;
         const paymentTerms = primaryLine?.supplier?.paymentTerms ?? undefined;
+        const routingMethod = primaryLine?.supplier?.poTransmissionMethod ?? "EMAIL";
+        const cxmlEndpoint = primaryLine?.supplier?.cxmlEndpoint ?? undefined;
 
-        await prisma.purchaseOrder.create({
+        const po = await prisma.purchaseOrder.create({
           data: {
             organizationId: organization.id,
             poNumber,
@@ -138,6 +160,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             expectedDelivery: fullReq.requiredDate ?? undefined,
             chartOfAccountId: fullReq.chartOfAccountId ?? undefined,
             glCoding: (fullReq.glCoding as Prisma.InputJsonValue) ?? undefined,
+            routingMethod,
+            cxmlEndpoint,
             supplierEmail,
             paymentTerms,
             notes: fullReq.description ?? fullReq.businessJustification ?? undefined,
@@ -160,6 +184,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             },
           },
         });
+        await logAudit({
+          organizationId: organization.id, userId: profile.id, userName: profile.name,
+          action: "CREATED", entity: "PURCHASE_ORDER", entityId: po.id, entityLabel: po.poNumber,
+          details: { fromRequisition: requisition.requisitionNumber, routingMethod },
+        });
+
+        if (supplierId) {
+          const sendResult = await sendPurchaseOrder({
+            poId: po.id, organizationId: organization.id, supabase,
+            actorName: "Veltriance (auto-sent on approval)",
+          });
+          if ("error" in sendResult) {
+            console.error("[approve] PO auto-send failed, left as DRAFT:", sendResult.error);
+          }
+        }
+        // No supplier resolved at all — nothing to send to yet; PO stays DRAFT
+        // until procurement assigns a supplier and sends it manually.
       }
     } catch (poErr) {
       // Log but don't fail the approval — the requisition is approved regardless

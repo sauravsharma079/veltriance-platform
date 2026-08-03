@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
+import { logAudit } from "@/lib/audit";
 
 async function getCtx() {
   const sb = await createClient();
@@ -58,6 +59,10 @@ export async function POST(req: NextRequest) {
       });
     }
     const full = await prisma.approvalRule.findUnique({ where: { id: rule.id }, include: { steps: true } });
+    await logAudit({
+      organizationId: admin.organizationId, userId: admin.profile.id, userName: admin.profile.name,
+      action: "CREATED", entity: "APPROVAL_RULE", entityId: rule.id, entityLabel: rule.name,
+    });
     return NextResponse.json({ rule: full }, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -73,6 +78,10 @@ export async function DELETE(req: NextRequest) {
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     await prisma.approvalRuleStep.deleteMany({ where: { ruleId: id } });
     await prisma.approvalRule.delete({ where: { id } });
+    await logAudit({
+      organizationId: admin.organizationId, userId: admin.profile.id, userName: admin.profile.name,
+      action: "DELETED", entity: "APPROVAL_RULE", entityId: id, entityLabel: existing.name,
+    });
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
+import { logAudit } from "@/lib/audit";
 
 export async function GET() {
   try {
@@ -40,6 +41,11 @@ export async function POST(req: NextRequest) {
         isSystem: false,
       },
     });
+    await logAudit({
+      organizationId: admin.organizationId, userId: admin.profile.id, userName: admin.profile.name,
+      action: "CREATED", entity: "ROLE", entityId: role.id, entityLabel: role.name,
+    });
+
     return NextResponse.json({ role }, { status: 201 });
   } catch (e: any) {
     if (e?.code === "P2002") return NextResponse.json({ error: "A role with this name already exists" }, { status: 409 });
