@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { ApprovalStepType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 
@@ -26,7 +27,7 @@ export async function GET() {
         OR: [
           { approverId: profile.id },
           ...(profile.role === "ADMIN" ? [{}] : []),
-          ...(profile.role === "PROCUREMENT" ? [{ stepType: { in: ["DIRECTOR","PROCUREMENT"] as const } }] : []),
+          ...(profile.role === "PROCUREMENT" ? [{ stepType: { in: ["DIRECTOR","PROCUREMENT"] as ApprovalStepType[] } }] : []),
         ],
       },
       include: { requisition: { select: { id: true, title: true, requisitionNumber: true, totalAmount: true, currency: true } } },

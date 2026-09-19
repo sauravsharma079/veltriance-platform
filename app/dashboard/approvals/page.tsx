@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { ApprovalStepType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { CheckSquare } from "lucide-react";
 
@@ -15,8 +16,8 @@ export default async function ApprovalsPage() {
       requisition: { organizationId: organization.id },
       OR: [
         { approverId: profile!.id },
-        ...(profile!.role === "PROCUREMENT" ? [{ stepType: { in: ["DIRECTOR", "PROCUREMENT"] as const } }] : []),
-        ...(profile!.role === "ADMIN" ? [{ stepType: { in: ["DIRECTOR", "PROCUREMENT", "FINANCE"] as const } }] : []),
+        ...(profile!.role === "PROCUREMENT" ? [{ stepType: { in: ["DIRECTOR", "PROCUREMENT"] as ApprovalStepType[] } }] : []),
+        ...(profile!.role === "ADMIN" ? [{ stepType: { in: ["DIRECTOR", "PROCUREMENT", "FINANCE"] as ApprovalStepType[] } }] : []),
       ],
     },
     include: {

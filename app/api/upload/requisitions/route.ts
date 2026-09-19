@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveUploadActor } from "@/lib/api-auth";
+import { generateRequisitionNumber } from "@/lib/requisition-number";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,8 +14,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No rows provided" }, { status: 400 });
 
     const results: { created:number; skipped:number; errors:string[] } = { created:0, skipped:0, errors:[] };
-    const count = await prisma.requisition.count({ where: { organizationId } });
-    let idx = count;
 
     for (const row of rows) {
       try {
@@ -51,8 +50,7 @@ export async function POST(req: NextRequest) {
           requestorId = requestor.id;
         }
 
-        idx++;
-        const num = "REQ-" + String(idx).padStart(4, "0");
+        const num = await generateRequisitionNumber(organizationId);
         const tax = amount * 0.18;
 
         const req2 = await prisma.requisition.create({
@@ -61,7 +59,7 @@ export async function POST(req: NextRequest) {
             requisitionNumber: num, title, category,
             priority: ["HIGH","MEDIUM","LOW","CRITICAL"].includes(priority) ? priority : "MEDIUM",
             status: "DRAFT", currency: "INR",
-            subtotal: amount, totalTax: tax, totalAmount: amount + tax,
+            taxAmount: tax, totalAmount: amount + tax,
             department, businessJustification: justification,
             deliveryLocation,
           },
