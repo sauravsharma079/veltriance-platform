@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     const entity   = req.nextUrl.searchParams.get("entity") ?? undefined;
     const entityId = req.nextUrl.searchParams.get("entityId") ?? undefined;
     const action   = req.nextUrl.searchParams.get("action") ?? undefined;
-    const limit    = parseInt(req.nextUrl.searchParams.get("limit") ?? "200");
+    const limit    = Math.min(Math.max(parseInt(req.nextUrl.searchParams.get("limit") ?? "200") || 200, 1), 500);
     const logs = await getAuditLogs(org.id, { entity, entityId, action, limit });
     return NextResponse.json({ logs });
   } catch (e: any) {

@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ requisitions: [] });
     const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ requisitions: [] });
-    const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "200");
+    const limit = Math.min(Math.max(parseInt(req.nextUrl.searchParams.get("limit") ?? "200") || 200, 1), 500);
     const requisitions = await prisma.requisition.findMany({
       where: { organizationId: org.id },
       orderBy: { createdAt: "desc" },
