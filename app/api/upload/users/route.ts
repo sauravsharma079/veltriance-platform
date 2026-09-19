@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { seatUsage } from "@/lib/licensing";
 import { resolveUploadActor } from "@/lib/api-auth";
 import { errorMessage } from "@/lib/errors";
 
@@ -14,7 +15,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No rows" }, { status: 400 });
 
     const results = { created: 0, skipped: 0, errors: [] as string[] };
-    const VALID_ROLES = ["ADMIN","PROCUREMENT","APPROVER","REQUESTOR","VIEWER"];
+    const VALID_ROLES = ["ADMIN","PROCUREMENT","APPROVER","REQUESTOR"];
+    let seatsLeft = (await seatUsage(organizationId)).remaining;
 
     for (const row of rows) {
       try {
@@ -25,6 +27,8 @@ export async function POST(req: NextRequest) {
 
         const existing = await prisma.user.findFirst({ where: { organizationId, email } });
         if (existing) { results.skipped++; continue; }
+
+        if (seatsLeft <= 0) { results.errors.push(`"${email}": seat limit reached — no more users can be added`); continue; }
 
         const rawRole = (row.role || row.Role || "REQUESTOR").trim().toUpperCase();
         const role = VALID_ROLES.includes(rawRole) ? rawRole : "REQUESTOR";
@@ -39,6 +43,7 @@ export async function POST(req: NextRequest) {
           },
         });
         results.created++;
+        seatsLeft--;
       } catch (e) {
         results.errors.push(`"${row.name || row.email}": ${errorMessage(e)?.split("\n")[0]}`);
       }

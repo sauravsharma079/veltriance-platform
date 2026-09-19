@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { moduleGuard } from "@/lib/licensing";
 import { logAudit } from "@/lib/audit";
 import { getMemberOrganization } from "@/lib/tenant";
 import { purchaseOrderScope } from "@/lib/permissions";
@@ -84,6 +85,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (!profile) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (profile.role !== "PROCUREMENT" && profile.role !== "ADMIN")
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    { const blocked = moduleGuard(org, "INTAKE_TO_PO"); if (blocked) return blocked; }
 
     const parsed = patchSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 422 });

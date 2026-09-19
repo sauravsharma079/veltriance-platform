@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { seatGuard } from "@/lib/licensing";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin();
     if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const seatBlocked = await seatGuard(admin.organizationId);
+    if (seatBlocked) return seatBlocked;
     const body = await req.json();
     const user = await prisma.user.create({
       data: {

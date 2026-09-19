@@ -10,17 +10,19 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { NotificationCenter } from "@/components/NotificationCenter";
+import type { LicenseModuleKey } from "@/lib/license-catalog";
 
 type Role = "REQUESTOR" | "APPROVER" | "PROCUREMENT" | "ADMIN";
 
-const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; roles: Role[] }[] = [
-  { href: "/dashboard",                 label: "Overview",        icon: LayoutDashboard,   roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"] },
-  { href: "/dashboard/intake",          label: "New Request",     icon: MessageSquarePlus, roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"] },
-  { href: "/dashboard/requisitions",    label: "Requisitions",    icon: FileText,          roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"] },
-  { href: "/dashboard/approvals",       label: "My Approvals",    icon: CheckSquare,       roles: ["APPROVER","PROCUREMENT","ADMIN"] },
+// `module`: the license module that unlocks this item; omitted = always shown.
+const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; roles: Role[]; module?: LicenseModuleKey }[] = [
+  { href: "/dashboard",                 label: "Overview",        icon: LayoutDashboard,   roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
+  { href: "/dashboard/intake",          label: "New Request",     icon: MessageSquarePlus, roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
+  { href: "/dashboard/requisitions",    label: "Requisitions",    icon: FileText,          roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
+  { href: "/dashboard/approvals",       label: "My Approvals",    icon: CheckSquare,       roles: ["APPROVER","PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
   { href: "/dashboard/suppliers",       label: "Suppliers",       icon: Building2,         roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"] },
-  { href: "/dashboard/catalogs",        label: "Catalogs",        icon: Package,           roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"] },
-  { href: "/dashboard/purchase-orders", label: "Purchase Orders", icon: ShoppingCart,      roles: ["PROCUREMENT","ADMIN"] },
+  { href: "/dashboard/catalogs",        label: "Catalogs",        icon: Package,           roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
+  { href: "/dashboard/purchase-orders", label: "Purchase Orders", icon: ShoppingCart,      roles: ["PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
 ];
 
 const CONFIG_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; roles: Role[] }[] = [
@@ -30,8 +32,9 @@ const CONFIG_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard;
   { href: "/dashboard/admin",          label: "Admin",        icon: Settings, roles: ["ADMIN"] },
 ];
 
-export function Sidebar({ role, name, email, organizationName }: {
+export function Sidebar({ role, name, email, organizationName, modules, planName }: {
   role: Role; name: string; email: string; organizationName: string;
+  modules: LicenseModuleKey[]; planName: string;
 }) {
   const pathname = usePathname();
   const router   = useRouter();
@@ -47,7 +50,7 @@ export function Sidebar({ role, name, email, organizationName }: {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
   }
 
-  const navItems    = NAV_ITEMS.filter(i => i.roles.includes(role));
+  const navItems    = NAV_ITEMS.filter(i => i.roles.includes(role) && (!i.module || modules.includes(i.module)));
   const configItems = CONFIG_ITEMS.filter(i => i.roles.includes(role));
 
   function isActive(href: string) {
@@ -63,7 +66,7 @@ export function Sidebar({ role, name, email, organizationName }: {
           <div className="size-7 rounded-lg bg-gradient-to-br from-[#1A2A52] to-[#C8A04D] shrink-0" />
           <div className="min-w-0">
             <p className="font-semibold tracking-tight text-sm leading-tight">Veltriance</p>
-            <p className="text-[10px] text-white/40 truncate leading-tight">{organizationName}</p>
+            <p className="text-[10px] text-white/40 truncate leading-tight">{organizationName} · {planName}</p>
           </div>
         </div>
         <div className="flex items-center">

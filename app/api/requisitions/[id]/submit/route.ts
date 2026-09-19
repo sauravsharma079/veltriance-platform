@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ApprovalStepType, RequisitionStatus } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { moduleGuard } from "@/lib/licensing";
 import { logAudit } from "@/lib/audit";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
@@ -29,6 +30,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     if (!profile || !organization || profile.organizationId !== organization.id)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    { const blocked = moduleGuard(organization, "INTAKE_TO_PO"); if (blocked) return blocked; }
     const requisition = await prisma.requisition.findUnique({ where: { id } });
     if (!requisition || requisition.organizationId !== organization.id)
       return NextResponse.json({ error: "Not found" }, { status: 404 });

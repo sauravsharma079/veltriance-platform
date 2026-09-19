@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { moduleGuard } from "@/lib/licensing";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { sendPurchaseOrder } from "@/lib/po-send";
 
@@ -24,7 +25,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   ]);
   if (!profile || !organization || profile.organizationId !== organization.id)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (profile.role !== "PROCUREMENT" && profile.role !== "ADMIN")
+
+  { const blocked = moduleGuard(organization, "INTAKE_TO_PO"); if (blocked) return blocked; }  if (profile.role !== "PROCUREMENT" && profile.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));

@@ -20,6 +20,14 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ── Licensing ── set by the platform operator (see /api/platform/.../license),
+  // never by the customer. Defaults match what every org had before licensing
+  // existed, so introducing these columns doesn't take anything away.
+  plan             String          @default("PROCURE_PLUS")
+  licensedModules  LicenseModule[] @default([INTAKE_TO_PO, SUPPLIER_RISK])
+  licenseExpiresAt DateTime?       // null = no expiry
+  seatLimit        Int?            // null = unlimited
+
   users           User[]
   suppliers       Supplier[]
   requisitions    Requisition[]
@@ -36,6 +44,16 @@ model Organization {
   punchoutSessions PunchoutSession[]
 
   @@index([slug])
+}
+
+// Sellable capabilities. An org can hold any combination, so a customer can buy
+// just Intake-to-PO or the whole suite. See lib/license-catalog.ts.
+enum LicenseModule {
+  INTAKE_TO_PO   // requisitions, approvals, catalogs, purchase orders
+  SUPPLIER_RISK  // supplier onboarding, documents, risk assessment
+  SOURCING       // RFx events and bidding
+  CONTRACTS      // negotiation, signing, published contract repository
+  AGENTS         // autonomous agents that act with minimal human touch
 }
 
 // ───────────────────────────── Users & Roles ────────────────────────────────

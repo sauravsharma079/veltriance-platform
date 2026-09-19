@@ -3,6 +3,7 @@ import { z } from "zod";
 import { RequisitionStatus, ApprovalStepType, RequisitionPriority, Prisma } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { moduleGuard } from "@/lib/licensing";
 import { generateRequisitionNumber } from "@/lib/requisition-number";
 import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { logAudit } from "@/lib/audit";
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
     if (!profile || !organization || profile.organizationId !== organization.id)
       return NextResponse.json({ error: "Profile not found — are you signed in to the right workspace?" }, { status: 404 });
 
+    { const blocked = moduleGuard(organization, "INTAKE_TO_PO"); if (blocked) return blocked; }
     const body = await req.json();
     const parsed = submitSchema.safeParse(body);
     if (!parsed.success) {

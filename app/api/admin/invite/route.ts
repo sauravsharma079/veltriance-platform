@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
+import { seatGuard } from "@/lib/licensing";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { randomBytes } from "crypto";
 
@@ -24,6 +25,9 @@ export async function POST(req: NextRequest) {
   ]);
   if (!admin || !organization || admin.organizationId !== organization.id || admin.role !== "ADMIN")
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const seatBlocked = await seatGuard(organization.id);
+  if (seatBlocked) return seatBlocked;
 
   const body = await req.json();
   const parsed = inviteSchema.safeParse(body);
