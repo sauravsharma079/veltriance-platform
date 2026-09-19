@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 import { INTEGRATION_CATALOG } from "@/lib/integrations-catalog";
 import { syncSupplierAndLog } from "@/lib/erp/sync";
 
@@ -9,7 +9,7 @@ async function getCtx() {
   const sb = await createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return null;
-  const org = await getCurrentOrganization();
+  const org = await getMemberOrganization(user.id);
   if (!org) return null;
   return { org };
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 import { getAuditLogs } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return NextResponse.json({ logs: [] });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ logs: [] });
     const entity   = req.nextUrl.searchParams.get("entity") ?? undefined;
     const entityId = req.nextUrl.searchParams.get("entityId") ?? undefined;

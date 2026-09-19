@@ -47,13 +47,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: supplierId } = await params;
   const { contactId } = await req.json();
-  const organization = await getCurrentOrganization();
-  if (!organization) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const [profile, organization] = await Promise.all([
+    prisma.user.findUnique({ where: { authId: user.id } }),
+    getCurrentOrganization(),
+  ]);
+  if (!profile || !organization || profile.organizationId !== organization.id)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (profile.role !== "PROCUREMENT" && profile.role !== "ADMIN")
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const existing = await prisma.supplier.findUnique({ where: { id: supplierId } });
   if (!existing || existing.organizationId !== organization.id)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.supplierContact.delete({ where: { id: contactId, supplierId } });
+  const removed = await prisma.supplierContact.deleteMany({ where: { id: contactId, supplierId } });
+  if (removed.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

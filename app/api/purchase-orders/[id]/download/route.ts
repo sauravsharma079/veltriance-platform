@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 
 export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -9,7 +9,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return new NextResponse("Unauthorized", { status: 401 });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return new NextResponse("Not found", { status: 404 });
 
     const po = await prisma.purchaseOrder.findFirst({

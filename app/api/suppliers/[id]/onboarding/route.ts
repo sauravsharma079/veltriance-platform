@@ -22,6 +22,8 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supplier = await prisma.supplier.findFirst({ where: { id, organizationId: ctx.org.id }, select: { id: true } });
+  if (!supplier) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const profile = await prisma.supplierOnboardingProfile.findUnique({ where: { supplierId: id } });
   return NextResponse.json({ profile });
 }

@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 import { recomputeAndSaveSupplierRisk } from "@/lib/supplier-risk";
 
 async function getCtx() {
   const sb = await createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return null;
-  const org = await getCurrentOrganization();
+  const org = await getMemberOrganization(user.id);
   if (!org) return null;
   return { org };
 }

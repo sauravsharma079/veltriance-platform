@@ -20,6 +20,19 @@ export async function getCurrentOrganization() {
   return prisma.organization.findUnique({ where: { slug } });
 }
 
+/**
+ * Like getCurrentOrganization, but only returns the org if the signed-in user
+ * actually belongs to it. The subdomain alone says which tenant is being asked
+ * for, not who is allowed to see it — without this check, any signed-in user
+ * from org A could read org B's data by visiting B's subdomain.
+ */
+export async function getMemberOrganization(authId: string) {
+  const org = await getCurrentOrganization();
+  if (!org) return null;
+  const member = await prisma.user.findFirst({ where: { authId, organizationId: org.id }, select: { id: true } });
+  return member ? org : null;
+}
+
 /** Slug validation shared by the create-organization form and the API route. */
 export function isValidSlug(slug: string): boolean {
   return /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(slug);

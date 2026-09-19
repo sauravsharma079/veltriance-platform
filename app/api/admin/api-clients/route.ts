@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 import crypto from "crypto";
@@ -11,7 +11,7 @@ export async function GET() {
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return NextResponse.json({ clients: [] });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ clients: [] });
 
     // Try with _count first, fall back without it

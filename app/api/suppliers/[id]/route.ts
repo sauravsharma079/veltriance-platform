@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 import { canEditSupplier } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 
@@ -24,7 +24,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const profile = await prisma.user.findUnique({ where: { authId: user.id } });
     if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const profile = await prisma.user.findUnique({ where: { authId: user.id } });
     if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });

@@ -20,6 +20,8 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
   const { id, docId } = await context.params;
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const owned = await prisma.supplierDocument.findFirst({ where: { id: docId, supplierId: id, supplier: { organizationId: ctx.org.id } }, select: { id: true } });
+  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const body = await req.json();
   const doc = await prisma.supplierDocument.update({
     where: { id: docId },
@@ -37,6 +39,8 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ id:
   const { id, docId } = await context.params;
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const owned = await prisma.supplierDocument.findFirst({ where: { id: docId, supplierId: id, supplier: { organizationId: ctx.org.id } }, select: { id: true } });
+  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
   await prisma.supplierDocument.delete({ where: { id: docId } });
   const riskBreakdown = await recomputeAndSaveSupplierRisk(id);
   return NextResponse.json({ success: true, riskBreakdown });

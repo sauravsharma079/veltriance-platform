@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 
 export async function GET(req: NextRequest) {
   try {
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return NextResponse.json({ purchaseOrders: [] });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ purchaseOrders: [] });
     const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "200");
     const purchaseOrders = await prisma.purchaseOrder.findMany({

@@ -20,6 +20,8 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await prisma.supplier.findFirst({ where: { id, organizationId: ctx.org.id }, select: { id: true } })))
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   const documents = await prisma.supplierDocument.findMany({ where: { supplierId: id }, orderBy: { createdAt: "desc" } });
   // Lazily flip PENDING/VERIFIED docs whose expiryDate has passed — no separate cron needed.
   const now = new Date();
@@ -35,6 +37,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await prisma.supplier.findFirst({ where: { id, organizationId: ctx.org.id }, select: { id: true } })))
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   const body = await req.json();
   const doc = await prisma.supplierDocument.create({
     data: {

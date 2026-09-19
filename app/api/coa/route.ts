@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 
 // Public (auth-required) endpoint for users to fetch COAs when filling forms
 export async function GET() {
@@ -9,7 +9,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const organization = await getCurrentOrganization();
+  const organization = await getMemberOrganization(user.id);
   if (!organization) return NextResponse.json({ coas: [], lookupTypes: [] });
 
   const [coas, lookupTypes] = await Promise.all([

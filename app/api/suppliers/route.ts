@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrganization } from "@/lib/tenant";
+import { getMemberOrganization } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return NextResponse.json({ suppliers: [] });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ suppliers: [] });
     const q = req.nextUrl.searchParams.get("q") ?? "";
     const status = req.nextUrl.searchParams.get("status");
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const sb = await createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const org = await getCurrentOrganization();
+    const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const profile = await prisma.user.findUnique({ where: { authId: user.id } });
     if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
