@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { logAudit } from "@/lib/audit";
 import { getMemberOrganization } from "@/lib/tenant";
 import { purchaseOrderScope } from "@/lib/permissions";
 import { errorMessage } from "@/lib/errors";
@@ -54,6 +56,22 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
   }
 }
 
+const patchSchema = z.object({
+  supplierId: z.string().min(1).optional(),
+  supplierEmail: z.string().email().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  paymentTerms: z.string().nullable().optional(),
+  deliveryAddress: z.string().nullable().optional(),
+  // Where cXML orders are POSTed; the page saves this right before a cXML send.
+  cxmlEndpoint: z.string().url().refine(u => /^https?:\/\//i.test(u), "Must be an http(s) URL").nullable().optional(),
+});
+
+/**
+ * Edits a DRAFT PO's header (supplier, contact, terms, delivery, cXML endpoint).
+ * Status changes are not accepted here — they belong to the send / receive
+ * flows — and a PO that has already gone out is amended through the
+ * change-order endpoint (/revise) so the supplier is told about it.
+ */
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
@@ -62,25 +80,39 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const body = await req.json();
+    const profile = await prisma.user.findFirst({ where: { authId: user.id, organizationId: org.id }, select: { id: true, name: true, role: true } });
+    if (!profile) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (profile.role !== "PROCUREMENT" && profile.role !== "ADMIN")
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Map deliveryAddress → deliveryLocation for DB
-    const updateData: any = {};
-    if (body.supplierId !== undefined)   updateData.supplierId    = body.supplierId;
-    if (body.supplierEmail !== undefined) updateData.supplierEmail = body.supplierEmail;
-    if (body.notes !== undefined)        updateData.notes         = body.notes;
-    if (body.paymentTerms !== undefined) updateData.paymentTerms  = body.paymentTerms;
-    if (body.deliveryAddress !== undefined) updateData.deliveryAddress = body.deliveryAddress;
-    if (body.status !== undefined)       updateData.status        = body.status;
+    const parsed = patchSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 422 });
+    const data = parsed.data;
+
+    const existing = await prisma.purchaseOrder.findFirst({ where: { id, organizationId: org.id }, select: { id: true, poNumber: true, status: true } });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (existing.status !== "DRAFT")
+      return NextResponse.json({ error: `A ${existing.status} PO can't be edited directly — use a change order instead` }, { status: 422 });
+
+    if (data.supplierId) {
+      const supplier = await prisma.supplier.findFirst({ where: { id: data.supplierId, organizationId: org.id }, select: { id: true } });
+      if (!supplier) return NextResponse.json({ error: "Supplier not found" }, { status: 422 });
+    }
 
     const purchaseOrder = await prisma.purchaseOrder.update({
-      where: { id, organizationId: org.id },
-      data: updateData,
+      where: { id },
+      data,
       include: {
         supplier: { select: { id: true, name: true, contactEmail: true, contactName: true } },
         requisition: { select: { requisitionNumber: true, title: true } },
         lineItems: true,
       },
+    });
+
+    await logAudit({
+      organizationId: org.id, userId: profile.id, userName: profile.name,
+      action: "UPDATED", entity: "PURCHASE_ORDER", entityId: id, entityLabel: existing.poNumber,
+      details: { fields: Object.keys(data) },
     });
     return NextResponse.json({ purchaseOrder });
   } catch (e) {

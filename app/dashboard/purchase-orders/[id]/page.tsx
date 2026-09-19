@@ -86,7 +86,8 @@ export default function PODetailPage() {
 
   async function handleSave() {
     setSaving(true);
-    await fetch(`/api/purchase-orders/${id}`, {
+    setSendError(null);
+    const res = await fetch(`/api/purchase-orders/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -97,6 +98,7 @@ export default function PODetailPage() {
         deliveryAddress: editDelivery || undefined,
       }),
     });
+    if (!res.ok) setSendError((await res.json().catch(() => null))?.error ?? "Could not save changes");
     setSaving(false);
     load();
   }
@@ -109,10 +111,15 @@ export default function PODetailPage() {
     if (method === "EMAIL" && overrideEmail) body.supplierEmail = overrideEmail;
     if (method === "CXML" && cxmlEndpointInput) {
       // cXML endpoint lives on the PO row itself — save it before sending.
-      await fetch(`/api/purchase-orders/${id}`, {
+      const saved = await fetch(`/api/purchase-orders/${id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cxmlEndpoint: cxmlEndpointInput }),
       });
+      if (!saved.ok) {
+        setSendError((await saved.json().catch(() => null))?.error ?? "Could not save the cXML endpoint");
+        setSending(false);
+        return;
+      }
     }
     const res = await fetch(`/api/purchase-orders/${id}/send`, {
       method: "POST",
