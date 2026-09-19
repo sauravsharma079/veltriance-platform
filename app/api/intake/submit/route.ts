@@ -226,6 +226,12 @@ export async function POST(req: NextRequest) {
       include: { lineItems: true, approvalSteps: true },
     });
 
+    await logAudit({
+      organizationId: organization.id, userId: profile.id, userName: profile.name,
+      action: "SUBMITTED", entity: "REQUISITION", entityId: requisition.id, entityLabel: requisition.requisitionNumber,
+      details: { source: d.intakeSource, totalAmount, status: requisition.status },
+    });
+
     return NextResponse.json({
       requisition,
       warning: potentialDupe

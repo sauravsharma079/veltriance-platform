@@ -144,7 +144,7 @@ function buildCxmlOrderRequest(po: {
     <ItemIn quantity="${li.quantity}" lineNumber="${i + 1}">
       <ItemID><SupplierPartID>${i + 1}</SupplierPartID></ItemID>
       <ItemDetail>
-        <UnitPrice><Money currency="${po.currency}">${li.unitPrice}</Money></UnitPrice>
+        <UnitPrice><Money currency="${escapeXml(po.currency)}">${li.unitPrice}</Money></UnitPrice>
         <Description xml:lang="en">${escapeXml(li.description)}</Description>
         <UnitOfMeasure>EA</UnitOfMeasure>
         <Classification domain="UNSPSC">44000000</Classification>
@@ -155,7 +155,7 @@ function buildCxmlOrderRequest(po: {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE cXML SYSTEM "http://xml.cxml.org/schemas/cXML/1.2.014/cXML.dtd">
-<cXML timestamp="${now}" payloadID="${po.poNumber}@veltriance">
+<cXML timestamp="${now}" payloadID="${escapeXml(po.poNumber)}@veltriance">
   <Header>
     <From><Credential domain="DUNS"><Identity>${escapeXml(po.organization.name)}</Identity></Credential></From>
     <To><Credential domain="DUNS"><Identity>${escapeXml(po.supplier?.name ?? "Supplier")}</Identity></Credential></To>
@@ -163,8 +163,8 @@ function buildCxmlOrderRequest(po: {
   </Header>
   <Request>
     <OrderRequest>
-      <OrderRequestHeader orderID="${po.poNumber}" orderDate="${now}" type="${isChangeOrder ? "update" : "new"}">
-        <Total><Money currency="${po.currency}">${po.totalAmount}</Money></Total>
+      <OrderRequestHeader orderID="${escapeXml(po.poNumber)}" orderDate="${now}" type="${isChangeOrder ? "update" : "new"}">
+        <Total><Money currency="${escapeXml(po.currency)}">${po.totalAmount}</Money></Total>
         <ShipTo><Address><Name xml:lang="en">${escapeXml(po.deliveryAddress ?? "")}</Name></Address></ShipTo>
         <BillTo><Address><Name xml:lang="en">${escapeXml(po.organization.name)}</Name></Address></BillTo>
         <Payment><PCard number="" expiration=""/></Payment>

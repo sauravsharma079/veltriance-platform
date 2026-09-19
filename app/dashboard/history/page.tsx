@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Activity, Search, RefreshCw, Filter, User, FileText, Building2, CheckSquare, Package, Key, Upload, Settings } from "lucide-react";
+import { Activity, Search, RefreshCw, User, FileText, Building2, CheckSquare, Package, Key, Settings } from "lucide-react";
 
 type Log = {
   id: string;

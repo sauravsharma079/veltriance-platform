@@ -1,5 +1,5 @@
 "use client";
-import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
+import CsvUploadModal from "@/components/CsvUploadModal";
 import { AdminAgent } from "@/components/AdminAgent";
 import { useState, useEffect, useCallback } from "react";
 import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers, Clock } from "lucide-react";

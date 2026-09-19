@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Send, CheckCircle, Mail, Clipboard, Download, FileCode, History } from "lucide-react";
 import { ActivityLog } from "@/components/ActivityLog";
@@ -46,7 +46,6 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function PODetailPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
   const [po, setPo] = useState<PO | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -58,7 +57,6 @@ export default function PODetailPage() {
   const [editPaymentTerms, setEditPaymentTerms] = useState("");
   const [editDelivery, setEditDelivery] = useState("");
   const [editSupplierId, setEditSupplierId] = useState("");
-  const [suppliers, setSuppliers] = useState<{ id: string; name: string; contactEmail: string | null }[]>([]);
   const [cxmlEndpointInput, setCxmlEndpointInput] = useState("");
   const [reviseMode, setReviseMode] = useState(false);
   const [reviseLines, setReviseLines] = useState<{ id: string; quantity: string; unitPrice: string }[]>([]);
@@ -82,9 +80,6 @@ export default function PODetailPage() {
         setCxmlEndpointInput(d.purchaseOrder?.cxmlEndpoint ?? "");
         setLoading(false);
       });
-    fetch("/api/suppliers?status=ACTIVE")
-      .then(r => r.json())
-      .then(d => setSuppliers(d.suppliers ?? []));
   }, [id]);
 
   useEffect(() => { load(); }, [load]);

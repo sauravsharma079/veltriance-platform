@@ -565,25 +565,6 @@ function createStepOptions(state: CreateState): string[] | undefined {
   return undefined;
 }
 
-const CREATE_NEXT_STEP: Record<CreateKind, Record<string, string>> = {
-  user:     { name: "email", email: "jobtitle", jobtitle: "department", department: "employeeid", employeeid: "manager", manager: "roles", roles: "groups", groups: "coa", coa: "invite" },
-  role:     { name: "description", description: "permissions" },
-  group:    { name: "description", description: "color" },
-  lookup:   { type_name: "values" },
-  coa:      { name: "code", code: "company", company: "currency", currency: "segments" },
-  approval: { name: "amount", amount: "steps", steps: "more_steps" },
-  field:    { entity: "label", label: "fieldtype", fieldtype: "required" },
-  catalog:  {
-    catalog_type: "name", name: "description", description: "item_sku",
-    item_sku: "item_name", item_name: "item_price", item_price: "item_currency",
-    item_currency: "item_category", item_category: "item_type", item_type: "item_unit", item_unit: "item_leaddays",
-    item_leaddays: "item_supplier", item_supplier: "item_more", item_more: "item_sku",
-    p_name: "p_supplier", p_supplier: "p_url", p_url: "p_from_identity",
-    p_from_identity: "p_to_identity", p_to_identity: "p_secret",
-  },
-  commodity: { level: "parent", parent: "code", code: "label" },
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────

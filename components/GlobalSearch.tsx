@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, FileText, Building2, ShoppingCart, X, Command } from "lucide-react";
+import { Search, FileText, Building2, ShoppingCart, X } from "lucide-react";
 
 type Result = { id: string; type: string; title: string; sub: string; status: string; href: string };
 

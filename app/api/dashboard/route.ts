@@ -111,7 +111,6 @@ export async function GET() {
   const thisMonthSpend = requisitions
     .filter(r => r.createdAt >= startOfMonth)
     .reduce((s, r) => s + Number(r.totalAmount), 0);
-  const approvedCount = requisitions.filter(r => r.status === "APPROVED").length;
   const poCount = purchaseOrders.length;
   const poConversionRate = requisitions.length > 0
     ? Math.round((poCount / requisitions.length) * 100)

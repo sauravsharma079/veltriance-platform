@@ -66,6 +66,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ extracted, decision, categories });
   } catch (e) {
     console.error("[intake/understand]", errorMessage(e));
-    return NextResponse.json({ error: errorMessage(e) ?? "Failed to understand request" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e, "Failed to understand request") }, { status: 500 });
   }
 }

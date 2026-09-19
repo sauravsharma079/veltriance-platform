@@ -55,7 +55,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ purchaseOrder });
   } catch (e) {
     console.error("[po/id GET]", errorMessage(e));
-    return NextResponse.json({ error: errorMessage(e) ?? "Failed" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e, "Failed") }, { status: 500 });
   }
 }
 

@@ -34,6 +34,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ decision });
   } catch (e) {
     console.error("[intake/decision]", errorMessage(e));
-    return NextResponse.json({ error: errorMessage(e) ?? "Failed" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e, "Failed") }, { status: 500 });
   }
 }

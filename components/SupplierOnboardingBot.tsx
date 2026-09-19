@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { Building2, Send, Loader2, RotateCcw, ChevronRight, CheckCircle2, X } from "lucide-react";
+import { Building2, Send, Loader2, RotateCcw, ChevronRight, X } from "lucide-react";
 import { errorMessage } from "@/lib/errors";
 
 type Step = "WELCOME"|"NAME"|"CATEGORY"|"EMAIL"|"PHONE"|"CONTACT"|"CITY"|"PAYMENT"|"JUSTIFICATION"|"CONFIRM"|"DONE";
@@ -22,7 +22,7 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({});
-  const [createdCode, setCreatedCode] = useState<string|null>(null);
+  const [, setCreatedCode] = useState<string|null>(null);
   const [orgName, setOrgName] = useState("your organization");
   const [categories, setCategories] = useState<string[]>([]);
   const [paymentTerms, setPaymentTerms] = useState<string[]>([]);
@@ -68,7 +68,7 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
     await advance(text, text);
   }
 
-  async function advance(value: string, label: string) {
+  async function advance(value: string, _label: string) {
     switch (step) {
       case "NAME": {
         if (value.length < 3) { addMsg("bot", "Please enter the full legal company name (at least 3 characters):"); return; }

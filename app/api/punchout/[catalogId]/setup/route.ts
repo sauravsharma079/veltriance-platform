@@ -87,6 +87,6 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ catalogId
     return NextResponse.json({ redirectUrl: result.startPageUrl });
   } catch (e) {
     console.error("[punchout setup]", errorMessage(e));
-    return NextResponse.json({ error: errorMessage(e) ?? "Failed to start punchout session" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e, "Failed to start punchout session") }, { status: 500 });
   }
 }

@@ -3,9 +3,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  CheckCircle2, XCircle, AlertCircle, Clock, ChevronRight,
-  RefreshCw, X, ExternalLink, Eye, EyeOff, Loader2,
-  Wifi, WifiOff, Settings, Zap, Search,
+  CheckCircle2, XCircle, AlertCircle, ChevronRight,
+  X, Eye, EyeOff, Loader2,
+  Wifi, WifiOff, Zap, Search,
 } from "lucide-react";
 
 // ─── Connector catalog ────────────────────────────────────────────────────────

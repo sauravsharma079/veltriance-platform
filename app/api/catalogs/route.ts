@@ -107,6 +107,6 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     if (e?.code === "P2002") return NextResponse.json({ error: "A catalog with this name already exists" }, { status: 409 });
     console.error("[catalogs POST]", errorMessage(e));
-    return NextResponse.json({ error: errorMessage(e) ?? "Failed" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e, "Failed") }, { status: 500 });
   }
 }

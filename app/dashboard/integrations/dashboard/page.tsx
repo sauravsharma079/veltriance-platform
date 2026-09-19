@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2, XCircle, AlertCircle, Clock, RefreshCw,
-  TrendingUp, TrendingDown, Wifi, WifiOff, Activity,
+  Wifi, WifiOff, Activity,
   ArrowLeft, ChevronRight, Info, AlertTriangle,
 } from "lucide-react";
 
@@ -90,7 +90,6 @@ function IntegrationRow({ integration, onClick }: { integration: Integration; on
   const connected = integration.status === "CONNECTED";
   const errored   = integration.status === "ERROR";
   const cfg       = STATUS_CONFIG[integration.status] ?? STATUS_CONFIG.DISCONNECTED;
-  const Icon      = cfg.icon;
   const health    = integration.syncCount > 0
     ? Math.round(((integration.syncCount - integration.errorCount) / integration.syncCount) * 100)
     : null;
@@ -254,7 +253,7 @@ export default function IntegrationsDashboard() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Integration | null>(null);
   const [filter, setFilter] = useState<"all" | "healthy" | "error" | "disconnected">("all");
-  const [syncing, setSyncing] = useState(false);
+  const [, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -271,6 +270,7 @@ export default function IntegrationsDashboard() {
       const updated = integrations.find(i => i.key === selected.key);
       if (updated) setSelected(updated);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-sync when the list reloads, not when the user picks a row
   }, [integrations]);
 
   const connected    = integrations.filter(i => i.status === "CONNECTED");

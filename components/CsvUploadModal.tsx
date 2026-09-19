@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import { Upload, X, CheckCircle, AlertCircle, Download, FileText } from "lucide-react";
 import { errorMessage } from "@/lib/errors";
 

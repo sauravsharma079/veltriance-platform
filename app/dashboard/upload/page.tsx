@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useCallback } from "react";
-import { Upload, FileText, Building2, List, Tag, CheckCircle, AlertCircle, Download, X, ChevronDown } from "lucide-react";
+import { Upload, Building2, List, Tag, CheckCircle, AlertCircle, Download, X } from "lucide-react";
 import { errorMessage } from "@/lib/errors";
 
 type UploadResult = { created?:number; updated?:number; skipped?:number; errors?:string[]; total?:number; };

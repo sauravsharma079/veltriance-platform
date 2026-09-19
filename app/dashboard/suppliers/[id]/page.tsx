@@ -6,8 +6,7 @@ import { ActivityLog } from "@/components/ActivityLog";
 
 type Supplier = { id:string; name:string; code:string|null; category:string|null; tier:string|null; status:string; preferred:boolean; rating:number|null; riskScore:number|null; riskLevel:string|null; city:string|null; country:string|null; addressLine1:string|null; addressLine2:string|null; state:string|null; postalCode:string|null; website:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null; currency:string|null; onTimeDelivery:number|null; qualityScore:number|null; invoiceAccuracy:number|null; responsivenessScore:number|null; onboardingStage:string|null; complianceScore:number|null; erpSyncStatus:string|null; erpSyncedAt:string|null; erpSupplierId:string|null; poTransmissionMethod:string|null; cxmlEndpoint:string|null; assignedUserId:string|null; assignedUser:{id:string;name:string}|null; contacts?:{id:string;name:string;email:string|null;phone:string|null;role:string|null}[]; };
 
-const EDIT_FIELDS = ["name","category","tier","contactName","contactEmail","contactPhone","addressLine1","addressLine2","city","state","postalCode","country","paymentTerms","currency","poTransmissionMethod","cxmlEndpoint","assignedUserId","preferred"] as const;
-type EditForm = Record<typeof EDIT_FIELDS[number], string | boolean>;
+type EditForm = Record<"name"|"category"|"tier"|"contactName"|"contactEmail"|"contactPhone"|"addressLine1"|"addressLine2"|"city"|"state"|"postalCode"|"country"|"paymentTerms"|"currency"|"poTransmissionMethod"|"cxmlEndpoint"|"assignedUserId"|"preferred", string | boolean>;
 
 function toEditForm(s: Supplier): EditForm {
   return {
@@ -64,6 +63,7 @@ export default function SupplierDetailPage(){
     catch(e:any){setError(e?.message||"Failed to load supplier");}
     finally{setLoading(false);}
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load closes over id; re-run only when id changes
   useEffect(()=>{load();},[id]);
   useEffect(()=>{fetch("/api/admin/users").then(r=>r.json()).then(d=>setOrgUsers((d.users??[]).map((u:any)=>({id:u.id,name:u.name})))).catch(()=>{});},[]);
 

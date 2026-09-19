@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     }, { status: 201 });
   } catch (e) {
     console.error("[api-clients POST]", errorMessage(e));
-    return NextResponse.json({ error: errorMessage(e) ?? "Failed to create client" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e, "Failed to create client") }, { status: 500 });
   }
 }
 

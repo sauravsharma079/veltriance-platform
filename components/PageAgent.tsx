@@ -8,7 +8,6 @@ import Link from "next/link";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Message = { role: "agent" | "user"; text: string };
-type QuickAction = { label: string; description: string; href?: string; action?: () => void };
 
 // ─── Context knowledge base ───────────────────────────────────────────────────
 
@@ -153,7 +152,7 @@ function getPageContext(pathname: string) {
 
 // ─── Rule-based NLU ──────────────────────────────────────────────────────────
 
-function respond(msg: string, pathname: string): string {
+function respond(msg: string): string {
   const m = msg.toLowerCase();
 
   // Greetings
@@ -249,7 +248,7 @@ export function PageAgent() {
   function send() {
     const text = input.trim();
     if (!text) return;
-    const reply = respond(text, pathname);
+    const reply = respond(text);
     setMessages(m => [...m, { role: "user", text }, { role: "agent", text: reply }]);
     setInput("");
   }
@@ -322,7 +321,7 @@ export function PageAgent() {
                 </Link>
               ) : (
                 <button key={i} onClick={() => {
-                  const reply = respond(a.label, pathname);
+                  const reply = respond(a.label);
                   setMessages(m => [...m, { role: "user", text: a.label }, { role: "agent", text: reply }]);
                 }}
                   className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-[#1A2A52]/5 transition-colors group text-left">

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ApprovalStepType, RequisitionStatus } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { logAudit } from "@/lib/audit";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { errorMessage } from "@/lib/errors";
@@ -65,9 +66,15 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       include: { lineItems: true, approvalSteps: true },
     });
 
+    await logAudit({
+      organizationId: organization.id, userId: profile.id, userName: profile.name,
+      action: "SUBMITTED", entity: "REQUISITION", entityId: id, entityLabel: requisition.requisitionNumber,
+      details: { status: updated.status },
+    });
+
     return NextResponse.json({ requisition: updated });
   } catch (e) {
     console.error("[requisitions submit]", errorMessage(e));
-    return NextResponse.json({ error: errorMessage(e) ?? "Failed to submit requisition" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e, "Failed to submit requisition") }, { status: 500 });
   }
 }

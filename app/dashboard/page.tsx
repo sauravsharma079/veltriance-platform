@@ -4,13 +4,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  FileText, ShoppingCart, Building2, CheckSquare, TrendingUp,
-  AlertCircle, Clock, ChevronRight, ArrowUpRight, Package,
+  FileText, Building2, CheckSquare, TrendingUp,
+  ChevronRight, ArrowUpRight, Package,
   IndianRupee, Activity, Zap,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend,
+  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, 
 } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

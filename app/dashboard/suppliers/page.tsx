@@ -1,5 +1,5 @@
 "use client";
-import CsvUploadModal, { CsvUploadConfig } from "@/components/CsvUploadModal";
+import CsvUploadModal from "@/components/CsvUploadModal";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Search, Plus, Star, AlertTriangle, CheckCircle, BarChart3, Building2, RefreshCw, X, Upload, Code2 } from "lucide-react";
