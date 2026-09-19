@@ -28,6 +28,10 @@ model Organization {
   licenseExpiresAt DateTime?       // null = no expiry
   seatLimit        Int?            // null = unlimited
 
+  // How much an agent may do without asking (see lib/agents/runtime.ts).
+  // SUGGEST is the safe default: every write waits for a human to approve it.
+  agentAutonomy    AgentAutonomy   @default(SUGGEST)
+
   users           User[]
   suppliers       Supplier[]
   requisitions    Requisition[]
@@ -42,6 +46,8 @@ model Organization {
   apiClients      ApiClient[]
   catalogs        Catalog[]
   punchoutSessions PunchoutSession[]
+  agentRuns        AgentRun[]
+  agentActions     AgentAction[]
 
   @@index([slug])
 }
@@ -975,4 +981,70 @@ model ApiToken {
 
   @@index([apiClientId])
   @@index([tokenHash])
+}
+
+
+// ───────────────────────────── Agents ───────────────────────────────────────
+
+enum AgentAutonomy {
+  SUGGEST      // writes are queued for a human to approve
+  ACT_NOTIFY   // agent acts, and each action shows in the inbox for review
+  AUTO         // agent acts; recorded in the run history and audit trail only
+}
+
+enum AgentRunStatus {
+  RUNNING
+  WAITING_HUMAN  // finished, but has actions awaiting approval
+  COMPLETED
+  FAILED
+}
+
+enum AgentActionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXECUTED
+  FAILED
+}
+
+model AgentRun {
+  id             String         @id @default(uuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agentKey       String
+  trigger        String         // SCHEDULE | MANUAL | EVENT
+  status         AgentRunStatus @default(RUNNING)
+  input          Json?
+  summary        String?
+  error          String?
+  // [{ thought, tool, input, result }] — the agent's full working, for audit.
+  steps          Json?
+  llmCalls       Int            @default(0)
+  startedAt      DateTime       @default(now())
+  finishedAt     DateTime?
+
+  actions        AgentAction[]
+
+  @@index([organizationId, startedAt])
+}
+
+model AgentAction {
+  id             String            @id @default(uuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runId          String
+  run            AgentRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  agentKey       String
+  tool           String
+  input          Json
+  rationale      String?
+  status         AgentActionStatus @default(PENDING)
+  decidedById    String?
+  decidedAt      DateTime?
+  result         Json?
+  error          String?
+  createdAt      DateTime          @default(now())
+
+  @@index([organizationId, status])
+  @@index([runId])
 }

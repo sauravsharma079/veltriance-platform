@@ -1,4 +1,5 @@
 {
   "buildCommand": "npx prisma generate && next build",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [{ "path": "/api/cron/agents", "schedule": "0 3 * * *" }]
 }

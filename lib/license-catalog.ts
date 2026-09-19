@@ -8,7 +8,7 @@ export const MODULE_CATALOG: Record<LicenseModuleKey, { label: string; descripti
   SUPPLIER_RISK: { label: "Supplier Onboarding & Risk", description: "Onboarding, documents, risk assessment and monitoring", available: true },
   SOURCING:      { label: "Sourcing", description: "RFx events, bidding and award", available: false },
   CONTRACTS:     { label: "Contracts", description: "Negotiation, e-signature and published contract repository", available: false },
-  AGENTS:        { label: "Autonomous Agents", description: "Agents that run workflows with minimal human touch", available: false },
+  AGENTS:        { label: "Autonomous Agents", description: "Agents that run workflows with minimal human touch", available: true },
 };
 
 export const ALL_MODULES = Object.keys(MODULE_CATALOG) as LicenseModuleKey[];
