@@ -23,8 +23,8 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.veltriance.com";
-  const module = req.nextUrl.searchParams.get("module");
-  const scope = (module && MODULE_SCOPES[module]) || ALL_SCOPES;
+  const moduleKey = req.nextUrl.searchParams.get("module");
+  const scope = (moduleKey && MODULE_SCOPES[moduleKey]) || ALL_SCOPES;
 
   const testScript = "const r=pm.response.json();if(r.access_token){pm.collectionVariables.set('accessToken',r.access_token);}";
 
@@ -124,13 +124,13 @@ export async function GET(req: NextRequest) {
     catalogs: catalogsItem,
   };
 
-  const item = module && allModules[module]
-    ? [authItem, allModules[module]]
+  const item = moduleKey && allModules[moduleKey]
+    ? [authItem, allModules[moduleKey]]
     : [authItem, requisitionsItem, purchaseOrdersItem, suppliersItem, adminItem, catalogsItem];
 
   const collection = {
     info: {
-      name: module ? `Veltriance API — ${module[0].toUpperCase()}${module.slice(1)}` : "Veltriance Procurement API",
+      name: moduleKey ? `Veltriance API — ${moduleKey[0].toUpperCase()}${moduleKey.slice(1)}` : "Veltriance Procurement API",
       description: "REST API for Veltriance Procurement Platform. Use OAuth 2.0 client credentials to authenticate. Bulk upload endpoints (/api/upload/*) accept the same bearer token and are usable from an external integration, not just the dashboard UI.",
       schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     },

@@ -857,7 +857,7 @@ export default function AdminPage() {
             <input value={lookupForm.type} onChange={e=>setLookupForm(f=>({...f,type:e.target.value.toUpperCase().replace(/\s+/g,"_")}))} placeholder="e.g. SHIPPING_METHOD"
               autoFocus
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1A2A52] focus:ring-1 focus:ring-[#1A2A52]/20"/>
-            <p className="text-[10px] text-gray-400 mt-1">You'll add the first value under this type right after.</p>
+            <p className="text-[10px] text-gray-400 mt-1">You&apos;ll add the first value under this type right after.</p>
           </div>
         ):(
           <div>

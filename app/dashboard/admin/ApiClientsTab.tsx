@@ -171,7 +171,7 @@ export function ApiClientsTab() {
           <CredentialBox label="Client ID"     value={newCredentials.client_id}     />
           <CredentialBox label="Client Secret" value={newCredentials.client_secret} />
           <button onClick={() => setNewCredentials(null)}
-            className="text-xs text-gray-500 hover:text-gray-300">Dismiss (I've saved the credentials)</button>
+            className="text-xs text-gray-500 hover:text-gray-300">Dismiss (I&apos;ve saved the credentials)</button>
         </div>
       )}
 

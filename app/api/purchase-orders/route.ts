@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
+import { purchaseOrderScope } from "@/lib/permissions";
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,8 +12,10 @@ export async function GET(req: NextRequest) {
     const org = await getMemberOrganization(user.id);
     if (!org) return NextResponse.json({ purchaseOrders: [] });
     const limit = Math.min(Math.max(parseInt(req.nextUrl.searchParams.get("limit") ?? "200") || 200, 1), 500);
+    const scope = await purchaseOrderScope(user.id, org.id);
+    if (!scope) return NextResponse.json({ purchaseOrders: [] });
     const purchaseOrders = await prisma.purchaseOrder.findMany({
-      where: { organizationId: org.id },
+      where: { organizationId: org.id, ...scope },
       orderBy: { createdAt: "desc" },
       take: limit,
       include: {

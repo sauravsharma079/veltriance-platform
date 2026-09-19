@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 // Checks the permission matrix built by Admin -> Roles (WorkspaceRole.permissions,
@@ -27,4 +28,16 @@ export async function canEditSupplier(
   if (profile.role === "ADMIN" || profile.role === "PROCUREMENT") return true;
   if (supplier.assignedUserId && supplier.assignedUserId === profile.id) return true;
   return userHasPermission(profile.id, "suppliers", "edit");
+}
+
+/**
+ * Extra PurchaseOrder filter for who may see which POs. REQUESTORs only see POs
+ * they created or that came from their own requisitions (mirrors how
+ * /api/requisitions scopes them); APPROVER, PROCUREMENT and ADMIN see the org.
+ */
+export async function purchaseOrderScope(authId: string, organizationId: string): Promise<Prisma.PurchaseOrderWhereInput | null> {
+  const profile = await prisma.user.findFirst({ where: { authId, organizationId }, select: { id: true, role: true } });
+  if (!profile) return null;
+  if (profile.role !== "REQUESTOR") return {};
+  return { OR: [{ createdById: profile.id }, { requisition: { requestorId: profile.id } }] };
 }

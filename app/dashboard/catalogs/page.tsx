@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, ShoppingCart, ExternalLink, Package, Zap, X, Check, Layers, AlertCircle } from "lucide-react";
 
@@ -92,7 +93,7 @@ export default function CatalogsPage() {
       const res = await fetch(`/api/punchout/${catalogId}/setup`, { method: "POST" });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Could not start punchout session");
-      window.location.href = d.redirectUrl;
+      window.location.assign(d.redirectUrl);
     } catch (e: any) { setError(e.message); setLaunching(null); }
   }
 
@@ -119,7 +120,7 @@ export default function CatalogsPage() {
       {reqSuccess && (
         <div className="mx-8 mt-4 flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs px-4 py-3 rounded-xl">
           <Check className="size-4 shrink-0"/>
-          Requisition <strong>{reqSuccess}</strong> created successfully! <a href="/dashboard/requisitions" className="underline ml-1">View it →</a>
+          Requisition <strong>{reqSuccess}</strong> created successfully! <Link href="/dashboard/requisitions" className="underline ml-1">View it →</Link>
           <button onClick={() => setReqSuccess("")} className="ml-auto"><X className="size-3.5"/></button>
         </div>
       )}

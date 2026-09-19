@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
+import { purchaseOrderScope } from "@/lib/permissions";
 
 export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -12,8 +13,11 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     const org = await getMemberOrganization(user.id);
     if (!org) return new NextResponse("Not found", { status: 404 });
 
+    const scope = await purchaseOrderScope(user.id, org.id);
+    if (!scope) return new NextResponse("Not found", { status: 404 });
+
     const po = await prisma.purchaseOrder.findFirst({
-      where: { id, organizationId: org.id },
+      where: { id, organizationId: org.id, ...scope },
       include: { lineItems: true, supplier: true, organization: { select: { name: true } }, chartOfAccount: { select: { name: true, code: true } } },
     });
     if (!po) return new NextResponse("PO not found", { status: 404 });

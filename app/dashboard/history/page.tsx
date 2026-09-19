@@ -48,6 +48,7 @@ function timeAgo(d: string) {
 export default function HistoryPage() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
+  const [now] = useState(() => Date.now());
   const [search, setSearch] = useState("");
   const [entity, setEntity] = useState("All");
   const [action, setAction] = useState("All");
@@ -81,7 +82,7 @@ export default function HistoryPage() {
 
   const stats = {
     total: logs.length,
-    today: logs.filter(l => new Date(l.createdAt) > new Date(Date.now()-86400000)).length,
+    today: logs.filter(l => new Date(l.createdAt) > new Date(now-86400000)).length,
     created: logs.filter(l => l.request?.action === "CREATED").length,
     approved: logs.filter(l => l.request?.action === "APPROVED").length,
   };

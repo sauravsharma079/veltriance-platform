@@ -55,7 +55,7 @@ export default function LandingPage() {
     const portStr = port && window.location.hostname === "localhost" ? `:${port}` : "";
     const base = rootDomain.replace(/:\d+$/, "");
     const proto = window.location.protocol;
-    window.location.href = `${proto}//${org.slug}.${base}${portStr}/login`;
+    window.location.assign(`${proto}//${org.slug}.${base}${portStr}/login`);
   }
 
   const showDropdown = focused && (query.length >= 2 || recentWorkspaces.length > 0);

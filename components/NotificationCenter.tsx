@@ -21,6 +21,7 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,6 +33,12 @@ export function NotificationCenter() {
       });
   }, []);
 
+  // Keep relative timestamps fresh while the page stays open.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -41,7 +48,7 @@ export function NotificationCenter() {
   }, []);
 
   function timeAgo(iso: string) {
-    const diff = Date.now() - new Date(iso).getTime();
+    const diff = now - new Date(iso).getTime();
     const m = Math.floor(diff / 60000);
     if (m < 1) return "just now";
     if (m < 60) return `${m}m ago`;
