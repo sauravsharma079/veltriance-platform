@@ -91,8 +91,8 @@ export async function syncSupplierToErp(supplier: Supplier, integration: Integra
       erpSupplierId = json?.id ?? json?.supplierId ?? json?.vendorId ?? undefined;
     } catch { /* non-JSON response is fine, still a success */ }
     return { ok: true, message: `Synced to ${integration.name}${erpSupplierId ? ` as ${erpSupplierId}` : ""}.`, erpSupplierId };
-  } catch (e: any) {
-    return { ok: false, message: `Could not reach ${integration.name}: ${e?.message ?? "network error"}` };
+  } catch (e) {
+    return { ok: false, message: `Could not reach ${integration.name}: ${e instanceof Error ? e.message : "network error"}` };
   }
 }
 

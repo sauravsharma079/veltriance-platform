@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type AuditAction =
@@ -17,11 +18,11 @@ export interface AuditEvent {
   entity: AuditEntity;
   entityId?: string;
   entityLabel?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   ipAddress?: string;
 }
 
-let auditIntegrationId: Record<string, string> = {};
+const auditIntegrationId: Record<string, string> = {};
 
 // The audit trail piggybacks on the generic Integration/IntegrationLog tables
 // (key="audit_log") rather than a dedicated model. Integration has no `type`/
@@ -58,15 +59,15 @@ export async function logAudit(event: AuditEvent): Promise<void> {
           entityId: event.entityId,
           entityLabel: event.entityLabel,
           action: event.action,
-          details: event.details || {},
+          details: (event.details || {}) as Prisma.InputJsonObject,
           ipAddress: event.ipAddress,
           timestamp: new Date().toISOString(),
         },
       },
     });
-  } catch (e: any) {
+  } catch (e) {
     // Never throw from audit — silent fail
-    console.error("[audit]", e?.message);
+    console.error("[audit]", e instanceof Error ? e.message : e);
   }
 }
 

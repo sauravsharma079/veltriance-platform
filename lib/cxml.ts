@@ -69,7 +69,7 @@ export function parsePunchOutSetupResponse(xml: string): PunchOutSetupResult {
   if (hasDangerousXmlDeclarations(xml)) {
     return { ok: false, statusCode: "400", statusText: "Response contained a disallowed DOCTYPE/ENTITY declaration" };
   }
-  let doc: any;
+  let doc: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- parsed XML is untyped
   try { doc = xmlParser().parse(xml); } catch { return { ok: false, statusCode: "502", statusText: "Malformed XML response" }; }
 
   const response = doc?.cXML?.Response;
@@ -90,7 +90,7 @@ export type PunchOutCartItem = {
 };
 export type PunchOutOrderMessage = { buyerCookie: string; items: PunchOutCartItem[] };
 
-function textOf(node: any): string {
+function textOf(node: unknown): string {
   if (node == null) return "";
   if (typeof node === "object") return String(node["#text"] ?? "");
   return String(node);
@@ -105,7 +105,8 @@ export function parsePunchOutOrderMessage(xml: string): PunchOutOrderMessage {
   const buyerCookie = String(msg.BuyerCookie ?? "").trim();
   if (!buyerCookie) throw new Error("Missing BuyerCookie");
 
-  const rawItems: any[] = Array.isArray(msg.ItemIn) ? msg.ItemIn : msg.ItemIn ? [msg.ItemIn] : [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawItems: Record<string, any>[] = Array.isArray(msg.ItemIn) ? msg.ItemIn : msg.ItemIn ? [msg.ItemIn] : [];
   const items: PunchOutCartItem[] = rawItems.map((it) => {
     const money = it?.ItemDetail?.UnitPrice?.Money;
     return {

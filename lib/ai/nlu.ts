@@ -103,8 +103,8 @@ async function groqExtract(text: string, categories: string[], apiKey: string): 
     const raw = json?.choices?.[0]?.message?.content;
     if (!raw) return null;
     return parseExtraction(raw, text);
-  } catch (e: any) {
-    console.error("[nlu] groqExtract failed", e?.message);
+  } catch (e) {
+    console.error("[nlu] groqExtract failed", e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -129,8 +129,8 @@ async function geminiExtract(text: string, categories: string[], apiKey: string)
     const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!raw) return null;
     return parseExtraction(raw, text);
-  } catch (e: any) {
-    console.error("[nlu] geminiExtract failed", e?.message);
+  } catch (e) {
+    console.error("[nlu] geminiExtract failed", e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -159,8 +159,8 @@ async function anthropicExtract(text: string, categories: string[], apiKey: stri
     const raw = json?.content?.[0]?.text;
     if (!raw) return null;
     return parseExtraction(raw, text);
-  } catch (e: any) {
-    console.error("[nlu] anthropicExtract failed", e?.message);
+  } catch (e) {
+    console.error("[nlu] anthropicExtract failed", e instanceof Error ? e.message : e);
     return null;
   }
 }
