@@ -33,9 +33,9 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     const rows = LI.map((li: any, i: number) => `
       <tr style="background:${i%2===1?"#f9fafb":"white"}">
         <td style="text-align:center;padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${i+1}</td>
-        <td style="padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.description||"—"}</td>
-        <td style="text-align:center;padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.quantity??1}</td>
-        <td style="text-align:right;padding:8px 10px;font-size:10px;font-family:monospace;border-bottom:1px solid #e5e7eb">${fmt(li.unitPrice??0)}</td>
+        <td style="padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.description||"—"}${li.itemType==="SERVICES"?'<span style="color:#7c3aed;font-size:8px;margin-left:4px">(Service)</span>':""}</td>
+        <td style="text-align:center;padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.pricingType==="AMOUNT"?"Fixed":`${li.quantity??1}${li.unit?` ${li.unit}`:""}`}</td>
+        <td style="text-align:right;padding:8px 10px;font-size:10px;font-family:monospace;border-bottom:1px solid #e5e7eb">${li.pricingType==="AMOUNT"?"—":fmt(li.unitPrice??0)}</td>
         <td style="padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${coaStr}</td>
         <td style="text-align:center;padding:8px 10px;font-size:10px;border-bottom:1px solid #e5e7eb">${li.glAccount||"—"}</td>
         <td style="text-align:right;padding:8px 10px;font-size:10px;font-family:monospace;border-bottom:1px solid #e5e7eb">${fmt(li.lineTotal??0)}</td>

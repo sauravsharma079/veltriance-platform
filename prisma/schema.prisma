@@ -374,6 +374,12 @@ model RequisitionLineItem {
   partNumber          String?
   category            String?
   commodity           String?
+  // SERVICES + AMOUNT means this is a fixed-fee service line: quantity is always
+  // stored as 1 and unitPrice holds the total amount, so every downstream total
+  // calc (subtotal, PO conversion, revise) keeps working unchanged.
+  itemType            RequisitionItemType @default(GOODS)
+  pricingType         PricingType @default(QUANTITY)
+  unit                String?
   quantity            Decimal     @db.Decimal(12, 2)
   unitPrice           Decimal     @db.Decimal(12, 2)
   lineTotal           Decimal     @db.Decimal(14, 2)
@@ -495,6 +501,16 @@ enum PORoutingMethod {
   MANUAL
 }
 
+enum RequisitionItemType {
+  GOODS
+  SERVICES
+}
+
+enum PricingType {
+  QUANTITY
+  AMOUNT
+}
+
 model PurchaseOrder {
   id               String          @id @default(uuid())
   organizationId   String
@@ -543,6 +559,9 @@ model PurchaseOrderLineItem {
   supplierId      String?
   supplier        Supplier?     @relation(fields: [supplierId], references: [id])
   description     String
+  itemType        RequisitionItemType @default(GOODS)
+  pricingType     PricingType @default(QUANTITY)
+  unit            String?
   quantity        Decimal       @db.Decimal(12, 2)
   unitPrice       Decimal       @db.Decimal(12, 2)
   lineTotal       Decimal       @db.Decimal(14, 2)
@@ -856,6 +875,7 @@ model CatalogItem {
   category    String?
   supplierId  String?
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  itemType    RequisitionItemType @default(GOODS)
   unit        String?
   leadDays    Int?
   active      Boolean  @default(true)

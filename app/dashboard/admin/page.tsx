@@ -4,6 +4,7 @@ import { AdminAgent } from "@/components/AdminAgent";
 import { useState, useEffect, useCallback } from "react";
 import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers, Clock } from "lucide-react";
 import { ActivityLog } from "@/components/ActivityLog";
+import { STANDARD_UNITS, mergeUnits } from "@/lib/units";
 
 type User = { id:string; name:string; email:string; role:string; department:string|null; inviteStatus:string; jobTitle:string|null; employeeId:string|null; managerId:string|null; manager:{id:string;name:string}|null; businessUnit:string|null; costCenter:string|null; addressLine1:string|null; addressLine2:string|null; city:string|null; state:string|null; postalCode:string|null; country:string|null; userRoles:{role:{id:string;name:string}}[]; contentGroupMembers:{contentGroup:{id:string;name:string}}[]; chartOfAccountAccess:{chartOfAccount:{id:string;code:string}}[] };
 type Supplier = { id:string; name:string; code:string; status:string; category:string|null; contactEmail:string|null; onboardingStage:string|null };
@@ -19,7 +20,7 @@ const PERM_ACTIONS = ["view","create","edit","delete","submit","approve","send",
 type ApiClient = { id:string; name:string; description:string|null; clientId:string; scopes:string[]; active:boolean };
 type CoaSegment = { id:string; position:number; name:string; description:string|null; linkedLookupType:string|null };
 type Coa = { id:string; name:string; code:string; companyCode:string|null; currency:string; taxType:string|null; taxRegNumber:string|null; billingCity:string|null; billingCountry:string|null; segments:CoaSegment[] };
-type CatalogItem = { id:string; sku:string; name:string; unitPrice:string; currency:string; category:string|null; supplierId:string|null; supplier:{name:string}|null; unit:string|null; leadDays:number|null; active:boolean };
+type CatalogItem = { id:string; sku:string; name:string; unitPrice:string; currency:string; category:string|null; supplierId:string|null; supplier:{name:string}|null; itemType:string; unit:string|null; leadDays:number|null; active:boolean };
 type Catalog = { id:string; name:string; type:string; status:string; description:string|null; supplierId:string|null; supplier:{name:string}|null; punchoutUrl:string|null; cxmlFromIdentity:string|null; cxmlToIdentity:string|null; _count:{items:number} };
 type ActiveSupplier = { id:string; name:string };
 
@@ -44,7 +45,7 @@ const ROLES_LIST = ["ADMIN","PROCUREMENT","APPROVER","REQUESTOR","VIEWER"];
 const STEP_TYPES = ["MANAGER","DIRECTOR","FINANCE","EXECUTIVE","PROCUREMENT"];
 const FIELD_TYPES = ["TEXT","NUMBER","DATE","DROPDOWN","CHECKBOX","TEXTAREA"];
 const MODULES = ["REQUISITION","SUPPLIER","PURCHASE_ORDER"];
-const LOOKUP_TYPES = ["DEPARTMENT","COST_CENTER","CATEGORY","GL_ACCOUNT","PAYMENT_TERMS","PRIORITY","DELIVERY_ADDRESS"];
+const LOOKUP_TYPES = ["DEPARTMENT","COST_CENTER","CATEGORY","GL_ACCOUNT","PAYMENT_TERMS","PRIORITY","DELIVERY_ADDRESS","UNIT_OF_MEASURE"];
 
 async function safeFetch(url: string) {
   try {
@@ -207,7 +208,7 @@ export default function AdminPage() {
   const [assistantSignal, setAssistantSignal] = useState(0);
   const [activeSuppliers, setActiveSuppliers] = useState<ActiveSupplier[]>([]);
   const [catalogForm, setCatalogForm] = useState({ name:"", type:"HOSTED", description:"", punchoutUrl:"", cxmlFromDomain:"", cxmlFromIdentity:"", cxmlToDomain:"", cxmlToIdentity:"", cxmlSenderDomain:"", cxmlSenderIdentity:"", cxmlSharedSecret:"" });
-  const [itemForm, setItemForm] = useState({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", unit:"", leadDays:"", supplierId:"" });
+  const [itemForm, setItemForm] = useState({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", itemType:"GOODS", unit:"", leadDays:"", supplierId:"" });
   const [userForm, setUserForm] = useState({ name:"", email:"", role:"REQUESTOR", jobTitle:"", department:"", employeeId:"", managerId:"", businessUnit:"", costCenter:"", addressLine1:"", city:"", state:"", postalCode:"", country:"", contentGroupIds:[] as string[], workspaceRoleIds:[] as string[] });
   const [ruleForm, setRuleForm] = useState({ name:"", module:"REQUISITION", priority:"10", minAmount:"", maxAmount:"", category:"", department:"", steps:[{ sequence:1, stepType:"MANAGER", stepLabel:"Line Manager", approverUserIds:[] as string[], approverMode:"ANY" }] });
   const [lookupForm, setLookupForm] = useState({ type:"DEPARTMENT", code:"", label:"" });
@@ -347,7 +348,7 @@ export default function AdminPage() {
       const r = await fetch(`/api/catalogs/${catalogId}/items`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(itemForm) });
       const d = await r.json();
       if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : JSON.stringify(d.error) || "Failed");
-      setItemForm({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", unit:"", leadDays:"", supplierId:"" });
+      setItemForm({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", itemType:"GOODS", unit:"", leadDays:"", supplierId:"" });
       await loadCatalogItems(catalogId);
       await loadAll();
     } catch (e: any) { setError(e.message); }
@@ -592,6 +593,9 @@ export default function AdminPage() {
           {tab==="lookups"&&(
             <div>
               <div className="flex items-center justify-between mb-5"><h2 className="text-base font-semibold text-gray-900">Lookup Values <span className="text-sm font-normal text-gray-400 ml-1">{lookups.filter(l=>l.type!=="COMMODITY").length} values</span></h2><div className="flex items-center gap-2"><button onClick={()=>setShowLookupUpload(true)} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Upload className="size-3.5"/>Upload CSV</button><button onClick={()=>{ setCreatingNewType(true); setLookupForm({type:"",code:"",label:""}); setModal("lookup"); }} className="flex items-center gap-1.5 text-xs font-semibold text-[#1A2A52] border border-[#1A2A52]/20 px-4 py-2 rounded-xl hover:bg-[#1A2A52]/5"><Plus className="size-3.5"/>New Type</button><button onClick={()=>{ setCreatingNewType(false); setLookupForm(f=>({...f,code:"",label:"",type:[...new Set([...LOOKUP_TYPES,...lookups.filter(l=>l.type!=="COMMODITY").map(l=>l.type)])][0]||""})); setModal("lookup"); }} className="flex items-center gap-1.5 bg-[#1A2A52] text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-[#243766]"><Plus className="size-3.5"/>Add Value</button></div></div>
+              <div className="bg-[#1A2A52]/5 border border-[#1A2A52]/15 rounded-xl px-4 py-3 mb-4 text-xs text-gray-600">
+                <span className="font-semibold text-[#1A2A52]">Units of measure:</span> {STANDARD_UNITS.map(u=>u.label).join(", ")} are always available across catalog items, requisitions and POs — no setup needed. Add org-specific ones below under type <span className="font-mono">UNIT_OF_MEASURE</span>.
+              </div>
               {lookups.filter(l=>l.type!=="COMMODITY").length===0?<div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-sm shadow-sm">No lookups</div>:(
                 <div className="space-y-4">{[...new Set(lookups.filter(l=>l.type!=="COMMODITY").map(l=>l.type))].map(type=>(<div key={type}><p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{type.replace(/_/g," ")}</p><div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">{lookups.filter(l=>l.type===type).map(l=>(<div key={l.id} className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/40"><span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded w-20 text-center">{l.code}</span><span className="text-sm text-gray-800 flex-1">{l.label}</span><button onClick={()=>{ if(confirm("Delete this lookup?")) apiCall("/api/admin/lookups","DELETE",{id:l.id}); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3"/></button></div>))}</div></div>))}</div>
               )}
@@ -651,12 +655,19 @@ export default function AdminPage() {
                           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{(catalogItems[c.id]??[]).length} items</p>
                           <button onClick={()=>setAssistantSignal(s=>s+1)} className="flex items-center gap-1 text-[10px] font-semibold text-[#1A2A52] hover:underline"><Sparkles className="size-3"/>Add items with Assistant</button>
                         </div>
-                        <div className="grid grid-cols-9 gap-2 mb-3">
+                        <div className="grid grid-cols-11 gap-2 mb-3">
                           <input value={itemForm.sku} onChange={e=>setItemForm(f=>({...f,sku:e.target.value}))} placeholder="SKU" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
                           <input value={itemForm.name} onChange={e=>setItemForm(f=>({...f,name:e.target.value}))} placeholder="Name" className="col-span-2 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <select value={itemForm.itemType} onChange={e=>setItemForm(f=>({...f,itemType:e.target.value}))} className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]">
+                            <option value="GOODS">Goods</option>
+                            <option value="SERVICES">Services</option>
+                          </select>
                           <input value={itemForm.unitPrice} onChange={e=>setItemForm(f=>({...f,unitPrice:e.target.value}))} placeholder="Price" type="number" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
                           <input value={itemForm.category} onChange={e=>setItemForm(f=>({...f,category:e.target.value}))} placeholder="Category" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
-                          <input value={itemForm.unit} onChange={e=>setItemForm(f=>({...f,unit:e.target.value}))} placeholder="Unit" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
+                          <select value={itemForm.unit} onChange={e=>setItemForm(f=>({...f,unit:e.target.value}))} className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]">
+                            <option value="">Unit...</option>
+                            {mergeUnits(lookups.filter(l=>l.type==="UNIT_OF_MEASURE").map(l=>({code:l.code,label:l.label}))).map(u=><option key={u.code} value={u.label}>{u.label}</option>)}
+                          </select>
                           <input value={itemForm.leadDays} onChange={e=>setItemForm(f=>({...f,leadDays:e.target.value}))} placeholder="Lead days" type="number" className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]"/>
                           <select value={itemForm.supplierId} onChange={e=>setItemForm(f=>({...f,supplierId:e.target.value}))} className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[#1A2A52]">
                             <option value="">Supplier...</option>
@@ -670,7 +681,8 @@ export default function AdminPage() {
                               <div key={it.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-50 last:border-0">
                                 <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded w-24 shrink-0 truncate">{it.sku}</span>
                                 <span className="text-xs text-gray-800 flex-1 truncate">{it.name}</span>
-                                <span className="text-xs text-gray-500 shrink-0">{it.currency} {Number(it.unitPrice).toLocaleString()}</span>
+                                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${it.itemType==="SERVICES"?"bg-purple-50 text-purple-700":"bg-blue-50 text-blue-700"}`}>{it.itemType==="SERVICES"?"Service":"Goods"}</span>
+                                <span className="text-xs text-gray-500 shrink-0">{it.currency} {Number(it.unitPrice).toLocaleString()}{it.unit?` / ${it.unit}`:""}</span>
                                 <span className="text-[10px] text-gray-400 shrink-0 w-20 truncate">{it.category||"—"}</span>
                                 <span className="text-[10px] text-gray-400 shrink-0 w-28 truncate">{it.supplier?.name||"—"}</span>
                                 <button onClick={()=>deleteItem(c.id,it.id)} className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50 shrink-0"><Trash2 className="size-3"/></button>
@@ -990,11 +1002,12 @@ export default function AdminPage() {
             endpoint: "/api/upload/catalog-items",
             extraBody: { catalogId: showCatalogUpload },
             templateName: "veltriance_catalog_items_template",
-            headers: ["sku","name","unitPrice","currency","category","supplier","unit","leadDays","description"],
+            headers: ["sku","name","unitPrice","currency","category","itemType","supplier","unit","leadDays","description"],
             requiredHeaders: ["name","category","unit","leadDays","supplier"],
             exampleRows: [
-              ["ITEM-001","Dell XPS 15 Laptop 16GB 512GB","125000","INR","IT Hardware","Dell Technologies","Each","7","Dell XPS 15 9530 Intel Core i7"],
-              ["ITEM-002","Samsung 27-inch 4K Monitor","38000","INR","IT Hardware","Samsung Electronics","Each","3","UHD 4K IPS Panel USB-C"],
+              ["ITEM-001","Dell XPS 15 Laptop 16GB 512GB","125000","INR","IT Hardware","GOODS","Dell Technologies","Each","7","Dell XPS 15 9530 Intel Core i7"],
+              ["ITEM-002","Samsung 27-inch 4K Monitor","38000","INR","IT Hardware","GOODS","Samsung Electronics","Each","3","UHD 4K IPS Panel USB-C"],
+              ["ITEM-003","Annual Support & Maintenance","250000","INR","IT Services","SERVICES","Dell Technologies","Year","1","24x7 onsite support contract"],
             ],
           }}
           onClose={() => setShowCatalogUpload(null)}

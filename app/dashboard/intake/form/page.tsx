@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Plus, Trash2, AlertTriangle, CheckCircle, Search } from "lucide-react";
 import { GlCodingPanel } from "@/components/GlCodingPanel";
 import { DynamicFieldsPanel, CustomFieldDef, FieldAnswers } from "@/components/DynamicFieldsPanel";
+import { mergeUnits } from "@/lib/units";
 
 type Supplier = { id: string; name: string; contactEmail: string | null; preferred: boolean };
 type LookupValue = { code: string; label: string };
@@ -20,7 +21,8 @@ const PRIORITIES = [
 
 type LineItem = {
   description: string; partNumber: string; category: string; commodity: string;
-  quantity: string; unitPrice: string; taxRate: string;
+  itemType: "GOODS" | "SERVICES"; pricingType: "QUANTITY" | "AMOUNT"; unit: string;
+  quantity: string; unitPrice: string; amount: string; taxRate: string;
   supplierId: string; supplierSearch: string;
   glAccount: string; costCenter: string; contractReference: string; notes: string;
   glCoaId: string; glCoding: Record<string, string>;
@@ -28,7 +30,8 @@ type LineItem = {
 
 const EMPTY_LINE: LineItem = {
   description: "", partNumber: "", category: "", commodity: "",
-  quantity: "1", unitPrice: "0", taxRate: "0",
+  itemType: "GOODS", pricingType: "QUANTITY", unit: "",
+  quantity: "1", unitPrice: "0", amount: "0", taxRate: "0",
   supplierId: "", supplierSearch: "",
   glAccount: "", costCenter: "", contractReference: "", notes: "",
   glCoaId: "", glCoding: {},
@@ -63,6 +66,7 @@ export default function IntakeFormPage() {
   const [categories, setCategories] = useState<LookupValue[]>([]);
   const [costCenters, setCostCenters] = useState<LookupValue[]>([]);
   const [deliveryAddresses, setDeliveryAddresses] = useState<LookupValue[]>([]);
+  const [units, setUnits] = useState<LookupValue[]>([]);
   const [supplierDropdown, setSupplierDropdown] = useState<{ idx: number; open: boolean }>({ idx: -1, open: false });
 
   useEffect(() => {
@@ -76,6 +80,7 @@ export default function IntakeFormPage() {
         setCategories(all.filter(l => l.type === "CATEGORY"));
         setCostCenters(all.filter(l => l.type === "COST_CENTER"));
         setDeliveryAddresses(all.filter(l => l.type === "DELIVERY_ADDRESS"));
+        setUnits(mergeUnits(all.filter(l => l.type === "UNIT_OF_MEASURE")));
       });
   }, []);
 
@@ -96,7 +101,7 @@ export default function IntakeFormPage() {
 
   // Totals
   const lineTotals = lines.map(li => {
-    const sub = Number(li.quantity) * Number(li.unitPrice);
+    const sub = li.pricingType === "AMOUNT" ? Number(li.amount) : Number(li.quantity) * Number(li.unitPrice);
     const tax = sub * (Number(li.taxRate) / 100);
     return { sub, tax, total: sub + tax };
   });
@@ -116,7 +121,7 @@ export default function IntakeFormPage() {
         return v !== undefined && v !== "";
       });
     }
-    if (step === 1) return lines.every(li => li.description.trim() && Number(li.quantity) > 0);
+    if (step === 1) return lines.every(li => li.description.trim() && (li.pricingType === "AMOUNT" ? Number(li.amount) > 0 : Number(li.quantity) > 0));
     return true;
   }
 
@@ -142,8 +147,11 @@ export default function IntakeFormPage() {
           partNumber: li.partNumber || undefined,
           category: li.category || header.category,
           commodity: li.commodity || undefined,
-          quantity: Number(li.quantity),
-          unitPrice: Number(li.unitPrice),
+          itemType: li.itemType,
+          pricingType: li.pricingType,
+          unit: li.unit || undefined,
+          quantity: li.pricingType === "AMOUNT" ? 1 : Number(li.quantity),
+          unitPrice: li.pricingType === "AMOUNT" ? Number(li.amount) : Number(li.unitPrice),
           taxRate: Number(li.taxRate) / 100,
           supplierId: li.supplierId || undefined,
           glAccount: li.glAccount || undefined,
@@ -380,20 +388,68 @@ export default function IntakeFormPage() {
                 </Field>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Quantity *">
-                  <input required type="number" min="0.01" step="0.01" value={li.quantity}
-                    onChange={e => setLine(idx, "quantity", e.target.value)} className="input" />
+              <div className="grid sm:grid-cols-3 gap-3">
+                <Field label="Goods or service?">
+                  <div className="flex gap-2">
+                    {(["GOODS", "SERVICES"] as const).map(t => (
+                      <button key={t} type="button" onClick={() => setLine(idx, "itemType", t)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-all ${
+                          li.itemType === t ? "bg-[#1A2A52]/10 text-[#1A2A52] border-[#1A2A52]" : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
+                        }`}>
+                        {t === "GOODS" ? "Goods" : "Service"}
+                      </button>
+                    ))}
+                  </div>
                 </Field>
-                <Field label="Unit price">
-                  <input type="number" min="0" step="0.01" value={li.unitPrice}
-                    onChange={e => setLine(idx, "unitPrice", e.target.value)} className="input" />
+                <Field label="Unit of measure">
+                  <select value={li.unit} onChange={e => setLine(idx, "unit", e.target.value)} className="input">
+                    <option value="">— Select unit —</option>
+                    {units.map(u => <option key={u.code} value={u.label}>{u.label}</option>)}
+                  </select>
                 </Field>
-                <Field label="Tax rate (%)">
-                  <input type="number" min="0" max="100" step="0.1" value={li.taxRate}
-                    onChange={e => setLine(idx, "taxRate", e.target.value)} className="input" placeholder="0" />
-                </Field>
+                {li.itemType === "SERVICES" && (
+                  <Field label="Priced by">
+                    <div className="flex gap-2">
+                      {([["QUANTITY", "Quantity"], ["AMOUNT", "Fixed amount"]] as const).map(([t, label]) => (
+                        <button key={t} type="button" onClick={() => setLine(idx, "pricingType", t)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-all ${
+                            li.pricingType === t ? "bg-[#1A2A52]/10 text-[#1A2A52] border-[#1A2A52]" : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
+                          }`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+                )}
               </div>
+
+              {li.pricingType === "AMOUNT" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Total amount *">
+                    <input required type="number" min="0.01" step="0.01" value={li.amount}
+                      onChange={e => setLine(idx, "amount", e.target.value)} className="input" placeholder="e.g. 50000 for a fixed-fee project" />
+                  </Field>
+                  <Field label="Tax rate (%)">
+                    <input type="number" min="0" max="100" step="0.1" value={li.taxRate}
+                      onChange={e => setLine(idx, "taxRate", e.target.value)} className="input" placeholder="0" />
+                  </Field>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="Quantity *">
+                    <input required type="number" min="0.01" step="0.01" value={li.quantity}
+                      onChange={e => setLine(idx, "quantity", e.target.value)} className="input" />
+                  </Field>
+                  <Field label="Unit price">
+                    <input type="number" min="0" step="0.01" value={li.unitPrice}
+                      onChange={e => setLine(idx, "unitPrice", e.target.value)} className="input" />
+                  </Field>
+                  <Field label="Tax rate (%)">
+                    <input type="number" min="0" max="100" step="0.1" value={li.taxRate}
+                      onChange={e => setLine(idx, "taxRate", e.target.value)} className="input" placeholder="0" />
+                  </Field>
+                </div>
+              )}
 
               {/* Inline supplier search — required */}
               <div>
@@ -555,7 +611,8 @@ export default function IntakeFormPage() {
             <table className="w-full text-sm">
               <thead><tr className="border-b border-gray-100 text-xs text-gray-500 text-left">
                 <th className="px-5 py-2.5 font-medium">Description</th>
-                <th className="px-5 py-2.5 font-medium">Qty</th>
+                <th className="px-5 py-2.5 font-medium">Type</th>
+                <th className="px-5 py-2.5 font-medium">Qty / Unit</th>
                 <th className="px-5 py-2.5 font-medium">Unit price</th>
                 <th className="px-5 py-2.5 font-medium text-right">Total</th>
               </tr></thead>
@@ -563,8 +620,13 @@ export default function IntakeFormPage() {
                 {lines.map((li, i) => (
                   <tr key={i} className="border-b border-gray-50 last:border-0">
                     <td className="px-5 py-2.5 text-gray-800">{li.description}</td>
-                    <td className="px-5 py-2.5 text-gray-500">{li.quantity}</td>
-                    <td className="px-5 py-2.5 text-gray-500">{header.currency} {Number(li.unitPrice).toLocaleString()}</td>
+                    <td className="px-5 py-2.5 text-gray-500 text-xs">{li.itemType === "SERVICES" ? "Service" : "Goods"}</td>
+                    <td className="px-5 py-2.5 text-gray-500">
+                      {li.pricingType === "AMOUNT" ? "Fixed amount" : `${li.quantity}${li.unit ? ` ${li.unit}` : ""}`}
+                    </td>
+                    <td className="px-5 py-2.5 text-gray-500">
+                      {li.pricingType === "AMOUNT" ? "—" : `${header.currency} ${Number(li.unitPrice).toLocaleString()}`}
+                    </td>
                     <td className="px-5 py-2.5 text-gray-800 text-right font-medium">
                       {header.currency} {lineTotals[i]?.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </td>
@@ -573,7 +635,7 @@ export default function IntakeFormPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t border-gray-200">
-                  <td colSpan={3} className="px-5 py-3 text-right font-bold text-gray-900">Grand Total</td>
+                  <td colSpan={4} className="px-5 py-3 text-right font-bold text-gray-900">Grand Total</td>
                   <td className="px-5 py-3 text-right font-bold text-gray-900">
                     {header.currency} {grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>

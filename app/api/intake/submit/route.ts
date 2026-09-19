@@ -11,7 +11,13 @@ import { parseRequiredDate } from "@/lib/date-phrase";
 
 const lineItemSchema = z.object({
   description: z.string().min(1),
-  quantity: z.coerce.number().positive(),
+  itemType: z.enum(["GOODS", "SERVICES"]).default("GOODS"),
+  // AMOUNT means a fixed-fee service line — quantity is forced to 1 below
+  // regardless of what's sent, and unitPrice carries the total amount, so
+  // every downstream total calc keeps working unchanged.
+  pricingType: z.enum(["QUANTITY", "AMOUNT"]).default("QUANTITY"),
+  unit: z.string().optional(),
+  quantity: z.coerce.number().positive().default(1),
   unitPrice: z.coerce.number().nonnegative(),
   taxRate: z.coerce.number().nonnegative().default(0),
   supplierId: z.string().optional(),
@@ -24,7 +30,7 @@ const lineItemSchema = z.object({
   notes: z.string().optional(),
   glCoaId: z.string().optional(),
   glCoding: z.record(z.string(), z.string()).optional(),
-});
+}).transform(li => li.pricingType === "AMOUNT" ? { ...li, quantity: 1 } : li);
 
 const submitSchema = z.object({
   title: z.string().min(1),
@@ -49,6 +55,9 @@ const submitSchema = z.object({
   customFieldAnswers: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   lineItems: z.array(lineItemSchema).optional(),
   // Legacy single-item fields (from chatbot)
+  itemType: z.enum(["GOODS", "SERVICES"]).optional(),
+  pricingType: z.enum(["QUANTITY", "AMOUNT"]).optional(),
+  unit: z.string().optional(),
   quantity: z.coerce.number().positive().optional(),
   unitPrice: z.coerce.number().nonnegative().optional(),
   supplierName: z.string().optional(),
@@ -91,7 +100,10 @@ export async function POST(req: NextRequest) {
       }
       lineItems = [{
         description: d.title,
-        quantity: d.quantity!,
+        itemType: d.itemType ?? "GOODS",
+        pricingType: d.pricingType ?? "QUANTITY",
+        unit: d.unit,
+        quantity: d.pricingType === "AMOUNT" ? 1 : d.quantity!,
         unitPrice: d.unitPrice ?? 0,
         taxRate: 0,
         supplierId,
@@ -172,6 +184,9 @@ export async function POST(req: NextRequest) {
             partNumber: li.partNumber,
             category: li.category,
             commodity: li.commodity,
+            itemType: li.itemType,
+            pricingType: li.pricingType,
+            unit: li.unit,
             quantity: li.quantity,
             unitPrice: li.unitPrice,
             lineTotal: li.lineTotal,

@@ -28,6 +28,8 @@ export async function POST(req: NextRequest) {
 
         const category = (row.category || row.Category || "").trim();
         const unit = (row.unit || "").trim();
+        const itemTypeRaw = (row.itemType || row.item_type || row.type || "").trim().toUpperCase();
+        const itemType: "GOODS" | "SERVICES" = itemTypeRaw === "SERVICES" || itemTypeRaw === "SERVICE" ? "SERVICES" : "GOODS";
         const leadDaysRaw = row.leadDays || row.lead_days || "";
         const supplierName = (row.supplier || row.supplierName || row.supplier_name || "").trim();
 
@@ -46,6 +48,7 @@ export async function POST(req: NextRequest) {
           unitPrice: parseFloat(row.unitPrice || row.unit_price || row.price || "0") || 0,
           currency: row.currency || "INR",
           category,
+          itemType,
           supplierId: supplier.id,
           unit,
           leadDays: parseInt(leadDaysRaw),

@@ -45,6 +45,7 @@ const createItemSchema = z.object({
   unitPrice: z.coerce.number().nonnegative(),
   currency: z.string().min(1),
   category: z.string().min(1),
+  itemType: z.enum(["GOODS", "SERVICES"]).default("GOODS"),
   supplierId: z.string().min(1),
   unit: z.string().min(1),
   leadDays: z.coerce.number().int().nonnegative(),

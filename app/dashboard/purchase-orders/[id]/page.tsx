@@ -29,7 +29,7 @@ type PO = {
   requisition: { requisitionNumber: string; title: string } | null;
   createdBy: { name: string; email: string };
   chartOfAccount: { name: string; code: string } | null;
-  lineItems: { id: string; description: string; quantity: string; unitPrice: string; lineTotal: string; glAccount: string | null }[];
+  lineItems: { id: string; description: string; itemType: string; pricingType: string; unit: string | null; quantity: string; unitPrice: string; lineTotal: string; glAccount: string | null }[];
 };
 
 const REVISABLE_STATUSES = ["SENT", "ACKNOWLEDGED", "PARTIALLY_RECEIVED"];
@@ -255,9 +255,10 @@ export default function PODetailPage() {
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                 <th className="px-4 py-2.5 font-medium">Description</th>
+                <th className="px-4 py-2.5 font-medium">Type</th>
                 <th className="px-4 py-2.5 font-medium">Chart of accounts</th>
                 <th className="px-4 py-2.5 font-medium">Billing</th>
-                <th className="px-4 py-2.5 font-medium text-right">Qty</th>
+                <th className="px-4 py-2.5 font-medium text-right">Qty / Unit</th>
                 <th className="px-4 py-2.5 font-medium text-right">Unit price</th>
                 <th className="px-4 py-2.5 font-medium text-right">Total</th>
               </tr>
@@ -268,6 +269,11 @@ export default function PODetailPage() {
                 return (
                   <tr key={li.id} className="border-b border-gray-50 last:border-0">
                     <td className="px-4 py-2.5 text-gray-700">{li.description}</td>
+                    <td className="px-4 py-2.5 text-xs">
+                      <span className={`font-semibold px-1.5 py-0.5 rounded-full ${li.itemType === "SERVICES" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
+                        {li.itemType === "SERVICES" ? "Service" : "Goods"}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{po.chartOfAccount ? `${po.chartOfAccount.name} (${po.chartOfAccount.code})` : "—"}</td>
                     <td className="px-4 py-2.5 text-gray-400 text-xs">{li.glAccount ?? "—"}</td>
                     {reviseMode && rl ? (
@@ -288,8 +294,10 @@ export default function PODetailPage() {
                       </>
                     ) : (
                       <>
-                        <td className="px-4 py-2.5 text-gray-500 text-right">{li.quantity}</td>
-                        <td className="px-4 py-2.5 text-gray-500 text-right">{Number(li.unitPrice).toLocaleString()}</td>
+                        <td className="px-4 py-2.5 text-gray-500 text-right">
+                          {li.pricingType === "AMOUNT" ? "Fixed amount" : `${li.quantity}${li.unit ? ` ${li.unit}` : ""}`}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-500 text-right">{li.pricingType === "AMOUNT" ? "—" : Number(li.unitPrice).toLocaleString()}</td>
                         <td className="px-4 py-2.5 text-gray-700 text-right font-medium">{Number(li.lineTotal).toLocaleString()}</td>
                       </>
                     )}
@@ -299,7 +307,7 @@ export default function PODetailPage() {
             </tbody>
             <tfoot>
               <tr className="border-t border-gray-100">
-                <td colSpan={4} className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">Total</td>
+                <td colSpan={5} className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">Total</td>
                 <td className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">
                   {po.currency} {Number(po.totalAmount).toLocaleString()}
                 </td>

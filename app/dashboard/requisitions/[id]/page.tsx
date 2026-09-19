@@ -32,6 +32,7 @@ type Requisition = {
     taxRate: string | null; glAccount: string | null; costCenter: string | null;
     contractReference: string | null; glCoding: Record<string, string> | null;
     chartOfAccount: { name: string; code: string } | null;
+    itemType: string; pricingType: string; unit: string | null;
     supplier: { name: string } | null;
   }[];
   approvalSteps: { id: string; stepType: string; sequence: number; status: string; comment: string | null; approver: { name: string } | null }[];
@@ -179,10 +180,11 @@ export default function RequisitionDetailPage() {
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                 <th className="px-4 py-2.5 font-medium">Description</th>
+                <th className="px-4 py-2.5 font-medium">Type</th>
                 <th className="px-4 py-2.5 font-medium">Supplier</th>
                 <th className="px-4 py-2.5 font-medium">Chart of accounts</th>
                 <th className="px-4 py-2.5 font-medium">Billing</th>
-                <th className="px-4 py-2.5 font-medium text-right">Qty</th>
+                <th className="px-4 py-2.5 font-medium text-right">Qty / Unit</th>
                 <th className="px-4 py-2.5 font-medium text-right">Unit price</th>
                 <th className="px-4 py-2.5 font-medium text-right">Total</th>
               </tr>
@@ -190,9 +192,15 @@ export default function RequisitionDetailPage() {
             <tbody>
               {req.lineItems.map((li) => {
                 const glString = li.glCoding ? Object.values(li.glCoding).join(" - ") : li.glAccount;
+                const isAmountBased = li.pricingType === "AMOUNT";
                 return (
                   <tr key={li.id} className="border-b border-gray-50 last:border-0">
                     <td className="px-4 py-2.5 text-gray-800 font-medium">{li.description}</td>
+                    <td className="px-4 py-2.5 text-xs">
+                      <span className={`font-semibold px-1.5 py-0.5 rounded-full ${li.itemType === "SERVICES" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
+                        {li.itemType === "SERVICES" ? "Service" : "Goods"}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5 text-gray-600 text-xs">{li.supplier?.name ?? <span className="text-red-400">Not set</span>}</td>
                     <td className="px-4 py-2.5 text-gray-600 text-xs">
                       {li.chartOfAccount ? `${li.chartOfAccount.name} (${li.chartOfAccount.code})` : "—"}
@@ -202,8 +210,10 @@ export default function RequisitionDetailPage() {
                         <span className="font-mono text-[#1A2A52] bg-[#1A2A52]/5 px-1.5 py-0.5 rounded">{glString}</span>
                       ) : "—"}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-500 text-right">{li.quantity}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-right">{Number(li.unitPrice).toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-right">
+                      {isAmountBased ? "Fixed amount" : `${li.quantity}${li.unit ? ` ${li.unit}` : ""}`}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500 text-right">{isAmountBased ? "—" : Number(li.unitPrice).toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-gray-800 font-medium text-right">{req.currency} {Number(li.lineTotal).toLocaleString()}</td>
                   </tr>
                 );
@@ -211,7 +221,7 @@ export default function RequisitionDetailPage() {
             </tbody>
             <tfoot>
               <tr className="border-t border-gray-100">
-                <td colSpan={6} className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">Total</td>
+                <td colSpan={7} className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">Total</td>
                 <td className="px-4 py-2.5 text-right text-sm font-semibold text-gray-800">
                   {req.currency} {Number(req.totalAmount).toLocaleString()}
                 </td>

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Sparkles, X, Send, CheckCircle2, AlertCircle, Loader2, ChevronRight, Pencil, Plus } from "lucide-react";
+import { STANDARD_UNITS, mergeUnits } from "@/lib/units";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -25,6 +26,7 @@ interface CreateState {
   catalogId?: string;
   suppliers?: { id: string; name: string }[];
   categories?: string[];
+  units?: string[];
   items?: { sku: string; name: string }[];
 }
 
@@ -460,6 +462,14 @@ async function fetchSupplierOptions(): Promise<{ id: string; name: string }[]> {
   } catch { return []; }
 }
 
+async function fetchUnitOptions(): Promise<string[]> {
+  try {
+    const d = await fetch("/api/admin/lookups?type=UNIT_OF_MEASURE").then(r => r.json());
+    const orgUnits = Array.isArray(d?.lookups) ? d.lookups.map((l: { code: string; label: string }) => ({ code: l.code, label: l.label })) : [];
+    return mergeUnits(orgUnits).map(u => u.label);
+  } catch { return STANDARD_UNITS.map(u => u.label); }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Create-flow step questions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -520,7 +530,8 @@ function createQuestion(state: CreateState): string {
     if (step === "item_price")      return "**Unit price**?";
     if (step === "item_currency")   return "**Currency**? (Enter for INR)";
     if (step === "item_category")   return "**Category**?";
-    if (step === "item_unit")       return "**Unit of measure**? (e.g. Each, Box, Kg, License, Hour)";
+    if (step === "item_type")       return "Is this **Goods** or a **Service**?";
+    if (step === "item_unit")       return "**Unit of measure**?";
     if (step === "item_leaddays")   return "**Lead time** in days?";
     if (step === "item_supplier")   return "Which **supplier** provides this item?";
     if (step === "item_more")       return `Add another item or type **done**.\n\nSo far: ${(state.items ?? []).map(i => i.name).join(", ") || "none"}`;
@@ -547,7 +558,8 @@ function createStepOptions(state: CreateState): string[] | undefined {
   if (step === "catalog_type")  return ["Hosted Catalog", "Punchout Connection"];
   if (step === "item_currency") return ["INR", "USD", "EUR", "GBP"];
   if (step === "item_category") return state.categories;
-  if (step === "item_unit")     return ["Each", "Box", "Kg", "License", "Hour"];
+  if (step === "item_type")     return ["Goods", "Services"];
+  if (step === "item_unit")     return state.units ?? STANDARD_UNITS.map(u => u.label);
   if (step === "item_supplier") return (state.suppliers ?? []).map((s, i) => `${i + 1}. ${s.name}`);
   if (step === "p_supplier")    return [...(state.suppliers ?? []).map((s, i) => `${i + 1}. ${s.name}`), "Skip"];
   return undefined;
@@ -564,7 +576,7 @@ const CREATE_NEXT_STEP: Record<CreateKind, Record<string, string>> = {
   catalog:  {
     catalog_type: "name", name: "description", description: "item_sku",
     item_sku: "item_name", item_name: "item_price", item_price: "item_currency",
-    item_currency: "item_category", item_category: "item_unit", item_unit: "item_leaddays",
+    item_currency: "item_category", item_category: "item_type", item_type: "item_unit", item_unit: "item_leaddays",
     item_leaddays: "item_supplier", item_supplier: "item_more", item_more: "item_sku",
     p_name: "p_supplier", p_supplier: "p_url", p_url: "p_from_identity",
     p_from_identity: "p_to_identity", p_to_identity: "p_secret",
@@ -963,7 +975,19 @@ export function AdminAgent({ onRefresh, openSignal }: { onRefresh: () => void; o
         }
         else if (step === "item_category") {
           if (!text.trim()) { addMsg([{ role: "agent", text: "Category is required." }]); setBusy(false); return; }
-          advanceCreate(cf, "item_unit", { ...data, category: text.trim() });
+          advanceCreate(cf, "item_type", { ...data, category: text.trim() });
+        }
+        else if (step === "item_type") {
+          const itemType = text.toLowerCase().startsWith("s") ? "SERVICES" : "GOODS";
+          let units = cf.units;
+          if (!units) {
+            addMsg([{ role: "loading", text: "Loading units…" }]);
+            units = await fetchUnitOptions();
+            setMessages(p => p.filter(m => m.role !== "loading"));
+          }
+          const nextState: CreateState = { ...cf, step: "item_unit", data: { ...data, itemType }, units };
+          setFlow(nextState);
+          addMsg([{ role: "agent", text: createQuestion(nextState), options: units }]);
         }
         else if (step === "item_unit") {
           if (!text.trim()) { addMsg([{ role: "agent", text: "Unit is required." }]); setBusy(false); return; }
@@ -998,7 +1022,7 @@ export function AdminAgent({ onRefresh, openSignal }: { onRefresh: () => void; o
           addMsg([{ role: "loading", text: `Adding item **${data.itemName}**…` }]);
           const result = await createCatalogItem(cf.catalogId!, {
             sku: data.sku, name: data.itemName, unitPrice: data.price, currency: data.currency || "INR",
-            category: data.category, unit: data.unit, leadDays: data.leaddays, supplierId: match.id,
+            category: data.category, itemType: data.itemType || "GOODS", unit: data.unit, leadDays: data.leaddays, supplierId: match.id,
           });
           setMessages(p => p.filter(m => m.role !== "loading"));
           if (!result.ok) { addMsg([{ role: "error", text: result.error ?? "Failed to add item." }]); setBusy(false); return; }
@@ -1012,7 +1036,7 @@ export function AdminAgent({ onRefresh, openSignal }: { onRefresh: () => void; o
         else if (step === "item_more") {
           if (text.toLowerCase() === "done") finishCatalogFlow(cf);
           else {
-            const nextState: CreateState = { ...cf, step: "item_sku", data: { ...data, sku: "", itemName: "", price: "", currency: "", category: "", unit: "", leaddays: "", supplier: "" } };
+            const nextState: CreateState = { ...cf, step: "item_sku", data: { ...data, sku: "", itemName: "", price: "", currency: "", category: "", itemType: "", unit: "", leaddays: "", supplier: "" } };
             setFlow(nextState);
             addMsg([{ role: "agent", text: createQuestion(nextState) }]);
           }

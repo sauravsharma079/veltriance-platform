@@ -174,6 +174,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                   : null;
                 return {
                   description: li.description,
+                  itemType: li.itemType,
+                  pricingType: li.pricingType,
+                  unit: li.unit,
                   quantity: li.quantity,
                   unitPrice: li.unitPrice,
                   lineTotal: li.lineTotal,

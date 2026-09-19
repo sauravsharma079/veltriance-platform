@@ -7,17 +7,20 @@ import type { ExtractedRequirement } from "@/lib/ai/nlu";
 import type { IntakeDecision, CatalogMatch } from "@/lib/ai/intake-decision";
 import { GlCodingPanel } from "@/components/GlCodingPanel";
 import { isRecognizedDatePhrase } from "@/lib/date-phrase";
+import { STANDARD_UNITS, mergeUnits } from "@/lib/units";
 
 type Msg = { role: "agent" | "user" | "success" | "error" | "loading"; text: string; options?: string[] };
 
-type Step = "WELCOME" | "CATEGORY_PICK" | "ITEM_PICK" | "SUPPLIER_PICK" | "DECISION_CONFIRM" | "REVIEW" | "GAP_FILL" | "COA_PICK" | "CONFIRM";
+type Step = "WELCOME" | "CATEGORY_PICK" | "ITEM_TYPE_PICK" | "PRICING_TYPE_PICK" | "ITEM_PICK" | "SUPPLIER_PICK" | "DECISION_CONFIRM" | "REVIEW" | "GAP_FILL" | "COA_PICK" | "CONFIRM";
 
 type SupplierMatch = IntakeDecision["supplierMatches"][number];
 
-type GapField = "quantity" | "unitPrice" | "chartOfAccount" | "costCenter" | "deliveryLocation" | "requiredDate" | "businessJustification";
+type GapField = "quantity" | "unitPrice" | "unit" | "amount" | "chartOfAccount" | "costCenter" | "deliveryLocation" | "requiredDate" | "businessJustification";
 const GAP_QUESTIONS: Record<GapField, string> = {
   quantity: "How many do you need?",
   unitPrice: "Do you know the expected **unit price**? (type 'skip' if not yet known — pricing can be finalized on the PO)",
+  unit: "Which **unit of measure** is this billed/measured in?",
+  amount: "What's the **total fixed amount** for this service?",
   chartOfAccount: "Which chart of accounts / GL coding should this be charged to?",
   costCenter: "Which **cost center** should this be charged to?",
   deliveryLocation: "Where should this be delivered?",
@@ -32,10 +35,15 @@ type Draft = {
   deliveryLocation: string | null; requiredDate: string | null; priority: string;
   businessJustification: string | null; supplierId?: string; supplierName?: string;
   costCenter: string | null; chartOfAccountId: string; glCoding: Record<string, string>; currency: string;
+  itemType: "GOODS" | "SERVICES"; pricingType: "QUANTITY" | "AMOUNT"; unit: string | null; amount: number | null;
 };
 
 // Which required field a "not configured yet" popup refers to, and what to do once dismissed.
 type MissingConfig = { label: string; lookupType: string; queue: GapField[]; draft: Draft };
+
+// Carries the category-resolved decision across the Goods/Service + pricing-type
+// questions, which happen before we decide whether to present it as-is.
+type PendingPresent = { draft: Draft; dec: IntakeDecision; confidenceNote: string };
 
 function bold(text: string) {
   return String(text ?? "").split("\n").map((line, i) => {
@@ -64,7 +72,9 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
   const [supplierCandidates, setSupplierCandidates] = useState<SupplierMatch[]>([]);
   const [costCenters, setCostCenters] = useState<LookupOption[]>([]);
   const [deliveryAddresses, setDeliveryAddresses] = useState<LookupOption[]>([]);
+  const [units, setUnits] = useState<LookupOption[]>(STANDARD_UNITS);
   const [missingConfig, setMissingConfig] = useState<MissingConfig | null>(null);
+  const [pendingPresent, setPendingPresent] = useState<PendingPresent | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +93,8 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       .then(d => setCostCenters((d.lookups ?? []).map((l: { code: string; label: string }) => ({ code: l.code, label: l.label }))));
     fetch("/api/admin/lookups?type=DELIVERY_ADDRESS").then(r => r.json())
       .then(d => setDeliveryAddresses((d.lookups ?? []).map((l: { code: string; label: string }) => ({ code: l.code, label: l.label }))));
+    fetch("/api/admin/lookups?type=UNIT_OF_MEASURE").then(r => r.json())
+      .then(d => setUnits(mergeUnits((d.lookups ?? []).map((l: { code: string; label: string }) => ({ code: l.code, label: l.label })))));
   }, [open]);
 
   const push = useCallback((...msgs: Msg[]) => setMessages(p => [...p, ...msgs]), []);
@@ -95,8 +107,13 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
 
   function computeGaps(d: Draft): GapField[] {
     const gaps: GapField[] = [];
-    if (!d.quantity) gaps.push("quantity");
-    if (!d.unitPrice && !d.supplierId) gaps.push("unitPrice");
+    if (d.itemType === "SERVICES" && d.pricingType === "AMOUNT") {
+      if (!d.amount) gaps.push("amount");
+    } else {
+      if (!d.quantity) gaps.push("quantity");
+      if (!d.unitPrice && !d.supplierId) gaps.push("unitPrice");
+    }
+    if (!d.unit) gaps.push("unit");
     // Coding/delivery are always asked explicitly (not inferred from free text) —
     // they should come from real org configuration, not a guess.
     gaps.push("chartOfAccount", "costCenter", "deliveryLocation");
@@ -126,12 +143,14 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       return;
     }
 
-    if (field === "deliveryLocation" || field === "costCenter") {
-      const list = field === "deliveryLocation" ? deliveryAddresses : costCenters;
+    if (field === "deliveryLocation" || field === "costCenter" || field === "unit") {
+      const list = field === "deliveryLocation" ? deliveryAddresses : field === "costCenter" ? costCenters : units;
       if (list.length === 0) {
+        // unit never actually hits this — `units` always has the standard list as a
+        // fallback — but kept generic/defensive to match costCenter/deliveryLocation.
         setMissingConfig({
-          label: field === "deliveryLocation" ? "Delivery Address" : "Cost Center",
-          lookupType: field === "deliveryLocation" ? "DELIVERY_ADDRESS" : "COST_CENTER",
+          label: field === "deliveryLocation" ? "Delivery Address" : field === "costCenter" ? "Cost Center" : "Unit of Measure",
+          lookupType: field === "deliveryLocation" ? "DELIVERY_ADDRESS" : field === "costCenter" ? "COST_CENTER" : "UNIT_OF_MEASURE",
           queue, draft: currentDraft,
         });
         return;
@@ -158,6 +177,57 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     const rest = gapQueue.slice(1);
     setGapQueue(rest);
     askNextGap(rest, draft);
+  }
+
+  function askItemType(baseDraft: Draft, dec: IntakeDecision, confidenceNote: string) {
+    setPendingPresent({ draft: baseDraft, dec, confidenceNote });
+    setDraft(baseDraft);
+    push({
+      role: "agent",
+      text: `**Category:** ${baseDraft.category}${confidenceNote}\n\nIs this for **goods** or a **service**?`,
+      options: ["📦 Goods", "🛠️ Service"],
+    });
+    setStep("ITEM_TYPE_PICK");
+  }
+
+  function handleItemTypePick(text: string) {
+    const isService = /service/i.test(text);
+    push({ role: "user", text: isService ? "Service" : "Goods" });
+    if (!pendingPresent) return;
+    const updatedDraft: Draft = { ...pendingPresent.draft, itemType: isService ? "SERVICES" : "GOODS" };
+    setDraft(updatedDraft);
+
+    if (!isService) {
+      // Goods are always quantity-based — no need for a second question.
+      const pending = pendingPresent;
+      setPendingPresent(null);
+      presentDecision(updatedDraft, pending.dec, pending.confidenceNote);
+      return;
+    }
+
+    setPendingPresent({ ...pendingPresent, draft: updatedDraft });
+    push({
+      role: "agent",
+      text: "**How would you like this priced?**",
+      options: ["🔢 By quantity (e.g. hourly rate × hours)", "💰 Fixed total amount"],
+    });
+    setStep("PRICING_TYPE_PICK");
+  }
+
+  function handlePricingTypePick(text: string) {
+    const isAmount = /amount|fixed/i.test(text);
+    push({ role: "user", text: isAmount ? "Fixed total amount" : "By quantity" });
+    if (!pendingPresent) return;
+    const updatedDraft: Draft = { ...pendingPresent.draft, pricingType: isAmount ? "AMOUNT" : "QUANTITY" };
+    setDraft(updatedDraft);
+
+    // A fixed-fee service isn't something to "buy from the catalog" — drop any
+    // catalog-item match so this falls through to the supplier-routing/sourcing
+    // path instead of proposing a specific hosted item to purchase.
+    const dec = isAmount ? { ...pendingPresent.dec, catalogMatches: [] } : pendingPresent.dec;
+    const pending = pendingPresent;
+    setPendingPresent(null);
+    presentDecision(updatedDraft, dec, pending.confidenceNote);
   }
 
   function presentDecision(baseDraft: Draft, dec: IntakeDecision, confidenceNote: string) {
@@ -315,6 +385,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       requiredDate: extracted.requiredDate, priority: extracted.priority,
       businessJustification: extracted.businessJustification,
       costCenter: null, chartOfAccountId: "", glCoding: {}, currency: "USD",
+      itemType: "GOODS", pricingType: "QUANTITY", unit: null, amount: null,
     };
     setDraft(newDraft);
 
@@ -331,7 +402,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
       return;
     }
 
-    presentDecision(newDraft, dec, confidenceNote);
+    askItemType(newDraft, dec, confidenceNote);
   }
 
   async function handleCategoryPick(text: string) {
@@ -367,7 +438,7 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     setBusy(false);
     if (!ok) { push({ role: "error", text: data.error || "Something went wrong." }); return; }
 
-    presentDecision(updatedDraft, data.decision, "");
+    askItemType(updatedDraft, data.decision, "");
   }
 
   function handleGapAnswer(text: string) {
@@ -386,6 +457,8 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     const updated: Draft = { ...draft };
     if (field === "quantity") updated.quantity = skip ? null : parseInt(text.replace(/\D/g, "")) || null;
     if (field === "unitPrice") updated.unitPrice = skip ? null : parseFloat(text.replace(/[^\d.]/g, "")) || null;
+    if (field === "unit") updated.unit = skip ? null : (pickFromList(text, units)?.label ?? text);
+    if (field === "amount") updated.amount = skip ? null : parseFloat(text.replace(/[^\d.]/g, "")) || null;
     if (field === "deliveryLocation") updated.deliveryLocation = skip ? null : (pickFromList(text, deliveryAddresses)?.label ?? text);
     if (field === "costCenter") updated.costCenter = skip ? null : (pickFromList(text, costCenters)?.label ?? text);
     if (field === "requiredDate") updated.requiredDate = skip ? null : text;
@@ -399,10 +472,14 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
 
   function showConfirmWith(d: Draft) {
     setStep("CONFIRM");
-    const amount = d.unitPrice && d.quantity ? `${d.currency} ${(d.unitPrice * d.quantity).toLocaleString()}` : "TBD";
+    const isAmountBased = d.itemType === "SERVICES" && d.pricingType === "AMOUNT";
+    const amount = isAmountBased
+      ? (d.amount ? `${d.currency} ${d.amount.toLocaleString()}` : "TBD")
+      : (d.unitPrice && d.quantity ? `${d.currency} ${(d.unitPrice * d.quantity).toLocaleString()}` : "TBD");
+    const qtyLine = isAmountBased ? "Fixed amount" : `Qty: ${d.quantity ?? "—"}${d.unit ? ` ${d.unit}` : ""}`;
     push({
       role: "agent",
-      text: `📋 **Ready to submit:**\n\n**${d.title}**\nCategory: ${d.category ?? "—"} · Qty: ${d.quantity ?? "—"} · Est. amount: ${amount}\nDelivery: ${d.deliveryLocation ?? "—"} · Cost center: ${d.costCenter ?? "—"} · Needed: ${d.requiredDate ?? "—"} · Priority: ${d.priority}${d.chartOfAccountId && Object.keys(d.glCoding).length > 0 ? `\nGL coding: ${Object.values(d.glCoding).join(" - ")}` : ""}${d.supplierName ? `\nSupplier: ${d.supplierName}` : ""}${d.businessJustification ? `\nJustification: ${d.businessJustification}` : ""}\n\nShall I submit this for approval?`,
+      text: `📋 **Ready to submit:**\n\n**${d.title}**\nCategory: ${d.category ?? "—"} · Type: ${d.itemType === "SERVICES" ? "Service" : "Goods"} · ${qtyLine} · Est. amount: ${amount}\nDelivery: ${d.deliveryLocation ?? "—"} · Cost center: ${d.costCenter ?? "—"} · Needed: ${d.requiredDate ?? "—"} · Priority: ${d.priority}${d.chartOfAccountId && Object.keys(d.glCoding).length > 0 ? `\nGL coding: ${Object.values(d.glCoding).join(" - ")}` : ""}${d.supplierName ? `\nSupplier: ${d.supplierName}` : ""}${d.businessJustification ? `\nJustification: ${d.businessJustification}` : ""}\n\nShall I submit this for approval?`,
       options: ["✅ Submit for approval", "❌ Start over"],
     });
   }
@@ -417,7 +494,10 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
         title: draft.title, category: draft.category || "Uncategorized", priority: draft.priority,
         deliveryLocation: draft.deliveryLocation, requiredDate: draft.requiredDate,
         businessJustification: draft.businessJustification, intakeSource: "CHATBOT",
-        quantity: draft.quantity ?? 1, unitPrice: draft.unitPrice ?? 0, supplierName: draft.supplierName,
+        itemType: draft.itemType, pricingType: draft.pricingType, unit: draft.unit ?? undefined,
+        quantity: draft.pricingType === "AMOUNT" ? 1 : draft.quantity ?? 1,
+        unitPrice: draft.pricingType === "AMOUNT" ? draft.amount ?? 0 : draft.unitPrice ?? 0,
+        supplierName: draft.supplierName,
         costCenter: draft.costCenter ?? undefined,
         chartOfAccountId: draft.chartOfAccountId || undefined,
         glCoding: Object.keys(draft.glCoding).length > 0 ? draft.glCoding : undefined,
@@ -494,6 +574,8 @@ export function IntakeAgent({ open, onClose }: { open: boolean; onClose: () => v
     setInput("");
     if (step === "WELCOME") { await handleUnderstand(text); return; }
     if (step === "CATEGORY_PICK") { await handleCategoryPick(text); return; }
+    if (step === "ITEM_TYPE_PICK") { handleItemTypePick(text); return; }
+    if (step === "PRICING_TYPE_PICK") { handlePricingTypePick(text); return; }
     if (step === "ITEM_PICK") { await handleItemPick(text); return; }
     if (step === "SUPPLIER_PICK") { await handleSupplierPick(text); return; }
     if (step === "DECISION_CONFIRM") { handleDecisionConfirmText(text); return; }
