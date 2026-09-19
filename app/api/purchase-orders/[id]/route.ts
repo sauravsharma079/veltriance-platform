@@ -33,22 +33,17 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     // Map to exact shape the page expects
     const purchaseOrder = {
       ...po,
-      // Page expects deliveryAddress but we store deliveryLocation
-      deliveryAddress: (po as any).deliveryLocation ?? (po as any).deliveryAddress ?? null,
-      // Page expects taxAmount but we store totalTax
-      taxAmount: String((po as any).totalTax ?? (po as any).taxAmount ?? 0),
-      subtotal: String((po as any).subtotal ?? 0),
-      totalAmount: String((po as any).totalAmount ?? 0),
-      // createdBy may not exist on schema — fallback
-      createdBy: (po as any).createdBy ?? { name: "System", email: "" },
-      // supplierEmail from supplier
-      supplierEmail: (po as any).supplierEmail ?? po.supplier?.contactEmail ?? null,
+      taxAmount: String(po.taxAmount),
+      subtotal: String(po.subtotal),
+      totalAmount: String(po.totalAmount),
+      // Fall back to the supplier's contact email when no PO-specific one is set
+      supplierEmail: po.supplierEmail ?? po.supplier?.contactEmail ?? null,
       // lineItems with string amounts
-      lineItems: ((po as any).lineItems ?? []).map((li: any) => ({
+      lineItems: po.lineItems.map(li => ({
         ...li,
-        quantity: String(li.quantity ?? 0),
-        unitPrice: String(li.unitPrice ?? 0),
-        lineTotal: String(li.lineTotal ?? 0),
+        quantity: String(li.quantity),
+        unitPrice: String(li.unitPrice),
+        lineTotal: String(li.lineTotal),
       })),
     };
 

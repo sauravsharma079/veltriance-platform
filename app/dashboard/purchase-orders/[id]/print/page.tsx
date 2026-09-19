@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 type LI = { description:string; itemType?:string; pricingType?:string; unit?:string|null; quantity:number; unitPrice:number; lineTotal:number; glAccount:string|null; };
-type PO = { id:string; poNumber:string; status:string; currency:string; subtotal:number; totalTax:number; totalAmount:number; deliveryAddress:string|null; requiredDate:string|null; issuedAt:string|null; paymentTerms:string|null; lineItems:LI[]; supplier:{ name:string; code:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null }|null; organization:{ name:string }|null; chartOfAccount:{ name:string; code:string }|null; glCoding:Record<string,string>|null; };
+type PO = { id:string; poNumber:string; status:string; currency:string; subtotal:number|string; taxAmount:number|string; totalAmount:number|string; deliveryAddress:string|null; expectedDelivery:string|null; issuedAt:string|null; paymentTerms:string|null; lineItems:LI[]; supplier:{ name:string; code:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null }|null; organization:{ name:string }|null; chartOfAccount:{ name:string; code:string }|null; glCoding:Record<string,string>|null; };
 export default function PrintPage() {
   const { id } = useParams<{ id: string }>();
   const [po, setPo] = useState<PO|null>(null);
@@ -11,7 +11,7 @@ export default function PrintPage() {
     fetch(`/api/purchase-orders/${id}`).then(r=>r.json()).then(d=>{ if(d.purchaseOrder) setPo(d.purchaseOrder); else setErr("Not found"); }).catch(()=>setErr("Failed"));
   }, [id]);
   useEffect(() => { if(po) setTimeout(()=>window.print(), 600); }, [po]);
-  const fmt = (n:number) => (po?.currency||"INR")+" "+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2});
+  const fmt = (n:number|string) => (po?.currency||"INR")+" "+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2});
   const dt = (d:string|null) => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) : "—";
   if(err) return <div style={{padding:40,fontFamily:"Arial",color:"red"}}>{err}</div>;
   if(!po) return <div style={{padding:40,fontFamily:"Arial",color:"#666",textAlign:"center"}}>Loading PO...</div>;
@@ -23,13 +23,13 @@ export default function PrintPage() {
       <div className="meta">
         <div className="mb"><div className="lbl">Bill To</div><div className="val">{po.organization?.name||"—"}</div></div>
         <div className="mb"><div className="lbl">Supplier</div><div className="val">{po.supplier?.name||"—"}</div><div className="sub">{po.supplier?.code||""}<br/>{po.supplier?.contactEmail||""}<br/>{po.supplier?.contactPhone||""}</div></div>
-        <div className="mb"><div className="lbl">PO Details</div><div className="val">Issued: {dt(po.issuedAt)}</div><div className="sub">Required by: {dt(po.requiredDate)}<br/>Payment: {po.paymentTerms||po.supplier?.paymentTerms||"Net 30"}<br/>Currency: {po.currency||"INR"}</div></div>
+        <div className="mb"><div className="lbl">PO Details</div><div className="val">Issued: {dt(po.issuedAt)}</div><div className="sub">Required by: {dt(po.expectedDelivery)}<br/>Payment: {po.paymentTerms||po.supplier?.paymentTerms||"Net 30"}<br/>Currency: {po.currency||"INR"}</div></div>
       </div>
       <div className="dlv"><div className="lbl">Delivery Location</div><div className="val">{po.deliveryAddress||"To be confirmed"}</div></div>
       <div className="tt">Line Items</div>
       <table><thead><tr><th className="c" style={{width:"4%"}}>#</th><th style={{width:"32%"}}>Description</th><th className="c" style={{width:"6%"}}>Qty</th><th className="r" style={{width:"13%"}}>Unit Price</th><th style={{width:"17%"}}>Chart of Accounts</th><th className="c" style={{width:"11%"}}>Billing</th><th className="r" style={{width:"13%"}}>Total</th></tr></thead>
       <tbody>{po.lineItems?.length>0?po.lineItems.map((li,i)=><tr key={i}><td className="c">{i+1}</td><td>{li.description||"—"}{li.itemType==="SERVICES"?<span style={{color:"#7c3aed",fontSize:8,marginLeft:4}}>(Service)</span>:null}</td><td className="c">{li.pricingType==="AMOUNT"?"Fixed":`${li.quantity??1}${li.unit?` ${li.unit}`:""}`}</td><td className="r">{li.pricingType==="AMOUNT"?"—":fmt(li.unitPrice??0)}</td><td>{po.chartOfAccount?`${po.chartOfAccount.name} (${po.chartOfAccount.code})`:"—"}</td><td className="c">{li.glAccount||"—"}</td><td className="r">{fmt(li.lineTotal??0)}</td></tr>):<tr><td colSpan={7} className="c" style={{color:"#9ca3af",padding:20}}>No line items</td></tr>}</tbody></table>
-      <div className="tw"><div className="tb"><div className="tr"><span>Subtotal (excl. tax)</span><span>{fmt(po.subtotal??0)}</span></div><div className="tr"><span>Tax</span><span>{fmt(po.totalTax??0)}</span></div><div className="tr g"><span>TOTAL AMOUNT</span><span>{fmt(po.totalAmount??0)}</span></div></div></div>
+      <div className="tw"><div className="tb"><div className="tr"><span>Subtotal (excl. tax)</span><span>{fmt(po.subtotal??0)}</span></div><div className="tr"><span>Tax</span><span>{fmt(po.taxAmount??0)}</span></div><div className="tr g"><span>TOTAL AMOUNT</span><span>{fmt(po.totalAmount??0)}</span></div></div></div>
       <div className="trm"><div className="l2">Terms & Conditions</div><p>1. This Purchase Order is issued subject to the standard procurement terms of {po.organization?.name||"the issuing organization"}.<br/>2. All goods/services must conform to specifications. Any deviation requires prior written approval.<br/>3. Invoice must quote PO number <strong>{po.poNumber}</strong>. Invoices without reference will not be processed.<br/>4. Payment will be made as per agreed terms upon receipt of goods/services and valid tax invoice.</p></div>
       <div className="sgs"><div className="sg"><div className="sl"/><div className="sn">Procurement Manager</div><div className="sr">Authorised Signatory</div></div><div className="sg"><div className="sl"/><div className="sn">Finance Controller</div><div className="sr">Finance Approval</div></div><div className="sg"><div className="sl"/><div className="sn">{po.supplier?.contactName||"Supplier Representative"}</div><div className="sr">Supplier Acknowledgement</div></div></div>
       <div className="ft">Generated by Veltriance Procurement Platform &nbsp;|&nbsp; {po.poNumber} &nbsp;|&nbsp; {new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"})}<br/>System-generated document — valid without physical signature when transmitted electronically.</div>

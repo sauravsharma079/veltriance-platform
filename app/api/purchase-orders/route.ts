@@ -28,10 +28,10 @@ export async function GET(req: NextRequest) {
     // Normalize field names for both dashboard and list page
     const normalized = purchaseOrders.map(po => ({
       ...po,
-      totalAmount: Number((po as any).totalAmount ?? 0),
-      subtotal: Number((po as any).subtotal ?? 0),
-      totalTax: Number((po as any).totalTax ?? 0),
-      deliveryAddress: (po as any).deliveryLocation ?? (po as any).deliveryAddress ?? null,
+      totalAmount: Number(po.totalAmount),
+      subtotal: Number(po.subtotal),
+      taxAmount: Number(po.taxAmount),
+      deliveryAddress: po.deliveryAddress ?? null,
     }));
     return NextResponse.json({ purchaseOrders: normalized });
   } catch (e) {
