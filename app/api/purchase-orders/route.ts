@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
 import { purchaseOrderScope } from "@/lib/permissions";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,8 +34,8 @@ export async function GET(req: NextRequest) {
       deliveryAddress: (po as any).deliveryLocation ?? (po as any).deliveryAddress ?? null,
     }));
     return NextResponse.json({ purchaseOrders: normalized });
-  } catch (e: any) {
-    console.error("[purchase-orders GET]", e?.message);
+  } catch (e) {
+    console.error("[purchase-orders GET]", errorMessage(e));
     return NextResponse.json({ purchaseOrders: [] });
   }
 }

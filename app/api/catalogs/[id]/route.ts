@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveReadActor } from "@/lib/api-auth";
+import { errorMessage } from "@/lib/errors";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     });
     if (!catalog) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ catalog });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }
 
 const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
@@ -77,7 +78,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const catalog = await prisma.catalog.update({ where: { id }, data: parsed.data, select: CATALOG_SELECT });
     return NextResponse.json({ catalog });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -91,5 +92,5 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
 
     await prisma.catalog.delete({ where: { id } });
     return NextResponse.json({ ok: true });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }

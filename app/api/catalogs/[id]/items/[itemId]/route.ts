@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { errorMessage } from "@/lib/errors";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -55,7 +56,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const item = await prisma.catalogItem.update({ where: { id: itemId }, data: parsed.data });
     return NextResponse.json({ item });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string; itemId: string }> }) {
@@ -69,5 +70,5 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
 
     await prisma.catalogItem.delete({ where: { id: itemId } });
     return NextResponse.json({ ok: true });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorMessage } from "@/lib/errors";
 import { randomUUID } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -84,8 +85,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ catalogId
     await prisma.punchoutSession.update({ where: { id: session.id }, data: { startPageUrl: result.startPageUrl } });
 
     return NextResponse.json({ redirectUrl: result.startPageUrl });
-  } catch (e: any) {
-    console.error("[punchout setup]", e?.message);
-    return NextResponse.json({ error: e?.message ?? "Failed to start punchout session" }, { status: 500 });
+  } catch (e) {
+    console.error("[punchout setup]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) ?? "Failed to start punchout session" }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useCallback } from "react";
 import { Upload, X, CheckCircle, AlertCircle, Download, FileText } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 export type CsvUploadConfig = {
   title: string;
@@ -97,7 +98,7 @@ export default function CsvUploadModal({
       if (!res.ok) throw new Error(d.error || "Upload failed");
       setResult(d);
       onSuccess?.(d);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(errorMessage(e)); }
     setLoading(false);
   }
 

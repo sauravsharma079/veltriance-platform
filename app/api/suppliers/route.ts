@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,8 +30,8 @@ export async function GET(req: NextRequest) {
       take: 200,
     });
     return NextResponse.json({ suppliers });
-  } catch (e: any) {
-    console.error("[suppliers GET]", e?.message);
+  } catch (e) {
+    console.error("[suppliers GET]", errorMessage(e));
     return NextResponse.json({ suppliers: [] });
   }
 }
@@ -58,5 +59,5 @@ export async function POST(req: NextRequest) {
       action: "CREATED", entity: "SUPPLIER", entityId: supplier.id, entityLabel: supplier.name,
     });
     return NextResponse.json({ supplier }, { status: 201 });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }

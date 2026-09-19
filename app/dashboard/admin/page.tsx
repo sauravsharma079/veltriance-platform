@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers, Clock } from "lucide-react";
 import { ActivityLog } from "@/components/ActivityLog";
 import { STANDARD_UNITS, mergeUnits } from "@/lib/units";
+import { errorMessage } from "@/lib/errors";
 
 type User = { id:string; name:string; email:string; role:string; department:string|null; inviteStatus:string; jobTitle:string|null; employeeId:string|null; managerId:string|null; manager:{id:string;name:string}|null; businessUnit:string|null; costCenter:string|null; addressLine1:string|null; addressLine2:string|null; city:string|null; state:string|null; postalCode:string|null; country:string|null; userRoles:{role:{id:string;name:string}}[]; contentGroupMembers:{contentGroup:{id:string;name:string}}[]; chartOfAccountAccess:{chartOfAccount:{id:string;code:string}}[] };
 type Supplier = { id:string; name:string; code:string; status:string; category:string|null; contactEmail:string|null; onboardingStage:string|null };
@@ -261,7 +262,7 @@ export default function AdminPage() {
       if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : JSON.stringify(d.error) || "Failed");
       await loadAll();
       setModal(null); setEditItem(null);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(errorMessage(e)); }
     setSaving(false);
   }
 
@@ -351,7 +352,7 @@ export default function AdminPage() {
       setItemForm({ sku:"", name:"", unitPrice:"", currency:"INR", category:"", itemType:"GOODS", unit:"", leadDays:"", supplierId:"" });
       await loadCatalogItems(catalogId);
       await loadAll();
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(errorMessage(e)); }
     setSaving(false);
   }
   async function deleteItem(catalogId: string, itemId: string) {

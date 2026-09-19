@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
 import { purchaseOrderScope } from "@/lib/permissions";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -52,9 +53,9 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
     };
 
     return NextResponse.json({ purchaseOrder });
-  } catch (e: any) {
-    console.error("[po/id GET]", e?.message);
-    return NextResponse.json({ error: e?.message ?? "Failed" }, { status: 500 });
+  } catch (e) {
+    console.error("[po/id GET]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) ?? "Failed" }, { status: 500 });
   }
 }
 
@@ -87,8 +88,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       },
     });
     return NextResponse.json({ purchaseOrder });
-  } catch (e: any) {
-    console.error("[po/id PATCH]", e?.message);
-    return NextResponse.json({ error: e?.message }, { status: 500 });
+  } catch (e) {
+    console.error("[po/id PATCH]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
   }
 }

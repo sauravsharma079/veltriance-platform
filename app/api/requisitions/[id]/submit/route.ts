@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
+import { errorMessage } from "@/lib/errors";
 
 /**
  * POST /api/requisitions/[id]/submit
@@ -65,8 +66,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     });
 
     return NextResponse.json({ requisition: updated });
-  } catch (e: any) {
-    console.error("[requisitions submit]", e?.message);
-    return NextResponse.json({ error: e?.message ?? "Failed to submit requisition" }, { status: 500 });
+  } catch (e) {
+    console.error("[requisitions submit]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) ?? "Failed to submit requisition" }, { status: 500 });
   }
 }

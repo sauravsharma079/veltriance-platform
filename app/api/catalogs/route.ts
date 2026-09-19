@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveReadActor } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
+import { errorMessage } from "@/lib/errors";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -50,8 +51,8 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ catalogs });
-  } catch (e: any) {
-    console.error("[catalogs GET]", e?.message);
+  } catch (e) {
+    console.error("[catalogs GET]", errorMessage(e));
     return NextResponse.json({ catalogs: [] });
   }
 }
@@ -103,9 +104,9 @@ export async function POST(req: NextRequest) {
       details: { type: catalog.type },
     });
     return NextResponse.json({ catalog }, { status: 201 });
-  } catch (e: any) {
+  } catch (e) {
     if (e?.code === "P2002") return NextResponse.json({ error: "A catalog with this name already exists" }, { status: 409 });
-    console.error("[catalogs POST]", e?.message);
-    return NextResponse.json({ error: e?.message ?? "Failed" }, { status: 500 });
+    console.error("[catalogs POST]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) ?? "Failed" }, { status: 500 });
   }
 }

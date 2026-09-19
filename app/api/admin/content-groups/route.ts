@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET() {
   try {
@@ -38,8 +39,8 @@ export async function POST(req: NextRequest) {
       },
     });
     return NextResponse.json({ group }, { status: 201 });
-  } catch (e: any) {
+  } catch (e) {
     if (e?.code === "P2002") return NextResponse.json({ error: "A content group with this name already exists" }, { status: 409 });
-    return NextResponse.json({ error: e?.message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
   }
 }

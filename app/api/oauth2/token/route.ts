@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { errorMessage } from "@/lib/errors";
 
 export async function POST(req: NextRequest) {
   try {
@@ -62,8 +63,8 @@ export async function POST(req: NextRequest) {
       expires_in:   3600,
       scope:        grantedScopes.join(" "),
     });
-  } catch (e: any) {
-    console.error("[oauth2/token]", e?.message);
+  } catch (e) {
+    console.error("[oauth2/token]", errorMessage(e));
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }

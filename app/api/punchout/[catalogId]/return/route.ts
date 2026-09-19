@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorMessage } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { generateRequisitionNumber } from "@/lib/requisition-number";
 import { hasDangerousXmlDeclarations, parsePunchOutOrderMessage } from "@/lib/cxml";
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ catalogId:
 
     let order;
     try { order = parsePunchOutOrderMessage(cxml); }
-    catch (e: any) { return fallback(`Could not parse the returned cart: ${e?.message}`); }
+    catch (e) { return fallback(`Could not parse the returned cart: ${errorMessage(e)}`); }
 
     const session = await prisma.punchoutSession.findUnique({
       where: { buyerCookie: order.buyerCookie },
@@ -95,8 +96,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ catalogId:
     });
 
     return NextResponse.redirect(`${baseUrl}/dashboard/requisitions/${requisition.id}`, 303);
-  } catch (e: any) {
-    console.error("[punchout return]", e?.message);
+  } catch (e) {
+    console.error("[punchout return]", errorMessage(e));
     return fallback("Unexpected error processing the returned cart");
   }
 }

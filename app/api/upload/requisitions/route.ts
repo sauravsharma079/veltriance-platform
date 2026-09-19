@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveUploadActor } from "@/lib/api-auth";
 import { generateRequisitionNumber } from "@/lib/requisition-number";
+import { errorMessage } from "@/lib/errors";
 
 export async function POST(req: NextRequest) {
   try {
@@ -77,13 +78,13 @@ export async function POST(req: NextRequest) {
           });
         }
         results.created++;
-      } catch (e: any) {
-        results.errors.push(`"${row.title || "Row"}": ${e.message?.split("\n")[0]}`);
+      } catch (e) {
+        results.errors.push(`"${row.title || "Row"}": ${errorMessage(e)?.split("\n")[0]}`);
       }
     }
 
     return NextResponse.json(results);
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
   }
 }

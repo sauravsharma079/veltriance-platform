@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
 import { canEditSupplier } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
+import { errorMessage } from "@/lib/errors";
 
 // Fields a caller may edit on a supplier record. Anything else in the request
 // body is ignored rather than passed straight to Prisma — the previous
@@ -37,7 +38,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
 
     const canEdit = await canEditSupplier(profile, supplier);
     return NextResponse.json({ supplier, canEdit });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -72,5 +73,5 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     });
 
     return NextResponse.json({ supplier });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }

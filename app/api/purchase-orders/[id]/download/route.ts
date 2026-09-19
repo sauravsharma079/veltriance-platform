@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
 import { purchaseOrderScope } from "@/lib/permissions";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -137,7 +138,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111827;backgro
         "Cache-Control": "no-store",
       },
     });
-  } catch (e: any) {
-    return new NextResponse(`<html><body style="font-family:Arial;padding:40px;color:red">Error: ${e?.message}</body></html>`, { status: 500, headers: { "Content-Type": "text/html" } });
+  } catch (e) {
+    return new NextResponse(`<html><body style="font-family:Arial;padding:40px;color:red">Error: ${errorMessage(e)}</body></html>`, { status: 500, headers: { "Content-Type": "text/html" } });
   }
 }

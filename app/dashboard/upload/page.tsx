@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useCallback } from "react";
 import { Upload, FileText, Building2, List, Tag, CheckCircle, AlertCircle, Download, X, ChevronDown } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 type UploadResult = { created?:number; updated?:number; skipped?:number; errors?:string[]; total?:number; };
 type Tab = "suppliers"|"lookups"|"catalogs";
@@ -111,7 +112,7 @@ export default function UploadPage() {
       if (!res.ok) throw new Error(d.error || "Upload failed");
       setResult(d);
       setFile(null); setPreview([]);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(errorMessage(e)); }
     setLoading(false);
   }
 

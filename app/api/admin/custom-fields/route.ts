@@ -4,6 +4,7 @@ import { CustomFieldEntity } from "@prisma/client";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
+import { errorMessage } from "@/lib/errors";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -96,8 +97,8 @@ export async function POST(req: NextRequest) {
       },
     });
     return NextResponse.json({ field }, { status: 201 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
   }
 }
 
@@ -111,7 +112,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     await prisma.customField.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
   }
 }

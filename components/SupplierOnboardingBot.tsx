@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { Building2, Send, Loader2, RotateCcw, ChevronRight, CheckCircle2, X } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 type Step = "WELCOME"|"NAME"|"CATEGORY"|"EMAIL"|"PHONE"|"CONTACT"|"CITY"|"PAYMENT"|"JUSTIFICATION"|"CONFIRM"|"DONE";
 type FormData = { name?:string; category?:string; contactEmail?:string; contactPhone?:string; contactName?:string; city?:string; country?:string; paymentTerms?:string; businessJustification?:string; };
@@ -152,8 +153,8 @@ export default function SupplierOnboardingBot({ onClose }: { onClose?: () => voi
         [{ label: "📧 Register Another", value: "new" }]
       );
       setStep("DONE");
-    } catch (e: any) {
-      addMsg("bot", `❌ Registration failed: ${e.message}`,
+    } catch (e) {
+      addMsg("bot", `❌ Registration failed: ${errorMessage(e)}`,
         [{ label: "🔄 Try Again", value: "submit" }, { label: "↩ Start Over", value: "restart" }]
       );
       setStep("CONFIRM");

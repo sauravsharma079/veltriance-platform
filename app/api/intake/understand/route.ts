@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { extractRequirement } from "@/lib/ai/nlu";
 import { decideIntakeRoute, significantWords } from "@/lib/ai/intake-decision";
+import { errorMessage } from "@/lib/errors";
 
 export async function POST(req: NextRequest) {
   try {
@@ -63,8 +64,8 @@ export async function POST(req: NextRequest) {
       : null;
 
     return NextResponse.json({ extracted, decision, categories });
-  } catch (e: any) {
-    console.error("[intake/understand]", e?.message);
-    return NextResponse.json({ error: e?.message ?? "Failed to understand request" }, { status: 500 });
+  } catch (e) {
+    console.error("[intake/understand]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) ?? "Failed to understand request" }, { status: 500 });
   }
 }

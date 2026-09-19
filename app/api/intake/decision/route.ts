@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { decideIntakeRoute } from "@/lib/ai/intake-decision";
 import type { ExtractedRequirement } from "@/lib/ai/nlu";
+import { errorMessage } from "@/lib/errors";
 
 // Re-runs the catalog/supplier decision engine once a category is known — used when
 // the initial free-text extraction couldn't confidently detect one and the user
@@ -31,8 +32,8 @@ export async function POST(req: NextRequest) {
     };
     const decision = await decideIntakeRoute({ organizationId: organization.id, department: profile.department, extracted });
     return NextResponse.json({ decision });
-  } catch (e: any) {
-    console.error("[intake/decision]", e?.message);
-    return NextResponse.json({ error: e?.message ?? "Failed" }, { status: 500 });
+  } catch (e) {
+    console.error("[intake/decision]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) ?? "Failed" }, { status: 500 });
   }
 }

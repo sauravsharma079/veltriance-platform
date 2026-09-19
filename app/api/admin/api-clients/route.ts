@@ -5,6 +5,7 @@ import { getMemberOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 import crypto from "crypto";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET() {
   try {
@@ -33,8 +34,8 @@ export async function GET() {
     }
 
     return NextResponse.json({ clients });
-  } catch (e: any) {
-    console.error("[api-clients GET]", e?.message);
+  } catch (e) {
+    console.error("[api-clients GET]", errorMessage(e));
     return NextResponse.json({ clients: [] });
   }
 }
@@ -87,9 +88,9 @@ export async function POST(req: NextRequest) {
       client_id: rawClientId,
       client_secret: rawSecret,
     }, { status: 201 });
-  } catch (e: any) {
-    console.error("[api-clients POST]", e?.message);
-    return NextResponse.json({ error: e?.message ?? "Failed to create client" }, { status: 500 });
+  } catch (e) {
+    console.error("[api-clients POST]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) ?? "Failed to create client" }, { status: 500 });
   }
 }
 
@@ -107,5 +108,5 @@ export async function DELETE(req: NextRequest) {
       });
     }
     return NextResponse.json({ ok: true });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }

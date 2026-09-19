@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, ShoppingCart, ExternalLink, Package, Zap, X, Check, Layers, AlertCircle } from "lucide-react";
+import { errorMessage } from "@/lib/errors";
 
 type CatalogItem = { id:string; sku:string; name:string; unitPrice:string; currency:string; category:string|null; supplierId:string|null; supplier:{name:string}|null; unit:string|null; leadDays:number|null; description:string|null; };
 type Catalog = { id:string; name:string; type:string; status:string; description:string|null; supplier:{name:string}|null; punchoutUrl:string|null; items?:CatalogItem[]; _count:{items:number}; };
@@ -83,7 +84,7 @@ export default function CatalogsPage() {
       if (!res.ok) throw new Error(d.error || "Failed");
       setReqSuccess(d.requisition?.requisitionNumber || "");
       setCart([]); setShowCart(false);
-    } catch (e: any) { setError(e.message); }
+    } catch (e) { setError(errorMessage(e)); }
     setSubmitting(false);
   }
 
@@ -94,7 +95,7 @@ export default function CatalogsPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Could not start punchout session");
       window.location.assign(d.redirectUrl);
-    } catch (e: any) { setError(e.message); setLaunching(null); }
+    } catch (e) { setError(errorMessage(e)); setLaunching(null); }
   }
 
   const cartCount = cart.reduce((s, i) => s + (quantities[i.id] || 1), 0);

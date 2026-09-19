@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/api-auth";
 import crypto from "crypto";
+import { errorMessage } from "@/lib/errors";
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -35,9 +36,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       data: { active: body.active },
     });
     return NextResponse.json({ client: { ...client, _count: { tokens: 0 } } });
-  } catch (e: any) {
-    console.error("[api-clients PATCH]", e?.message);
-    return NextResponse.json({ error: e?.message }, { status: 500 });
+  } catch (e) {
+    console.error("[api-clients PATCH]", errorMessage(e));
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
   }
 }
 
@@ -48,7 +49,7 @@ export async function DELETE(_: NextRequest, ctx: { params: Promise<{ id: string
     if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     await prisma.apiClient.delete({ where: { id, organizationId: admin.organizationId } });
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
   }
 }

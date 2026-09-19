@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
+import { errorMessage } from "@/lib/errors";
 export async function GET(req: NextRequest) {
   try {
     const sb = await createClient();
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
       action: "CREATED", entity: "LOOKUP", entityId: lookup.id, entityLabel: `${type}: ${label}`,
     });
     return NextResponse.json({ lookup }, { status: 201 });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }
 export async function DELETE(req: NextRequest) {
   try {
@@ -48,5 +49,5 @@ export async function DELETE(req: NextRequest) {
       });
     }
     return NextResponse.json({ ok: true });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { getMemberOrganization } from "@/lib/tenant";
+import { errorMessage } from "@/lib/errors";
 export async function GET(req: NextRequest) {
   try {
     const sb = await createClient();
@@ -21,8 +22,8 @@ export async function GET(req: NextRequest) {
       include: { requestor: { select: { name: true, email: true } } },
     });
     return NextResponse.json({ requisitions });
-  } catch (e: any) {
-    console.error("[admin/requisitions]", e?.message);
+  } catch (e) {
+    console.error("[admin/requisitions]", errorMessage(e));
     return NextResponse.json({ requisitions: [] });
   }
 }

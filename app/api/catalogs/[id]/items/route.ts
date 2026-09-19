@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveReadActor, parsePagination, pagMeta } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
+import { errorMessage } from "@/lib/errors";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       prisma.catalogItem.count({ where: { catalogId: id } }),
     ]);
     return NextResponse.json({ items, ...pagMeta(total, offset, limit, `/api/catalogs/${id}/items`) });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }
 
 const createItemSchema = z.object({
@@ -91,5 +92,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       details: { sku, catalogItemId: item.id },
     });
     return NextResponse.json({ item }, { status: 201 });
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveUploadActor } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
+import { errorMessage } from "@/lib/errors";
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,10 +31,10 @@ export async function POST(req: NextRequest) {
           await prisma.lookup.create({ data: { organizationId, type, code, label, sortOrder: sort || count+1, active: true } });
           results.created++;
         }
-      } catch (e: any) { results.errors.push(e.message); }
+      } catch (e) { results.errors.push(errorMessage(e)); }
     }
     await logAudit({ organizationId, userId: userId ?? undefined, userName,
       action: "UPLOADED", entity: "LOOKUP", details: results });
     return NextResponse.json(results);
-  } catch (e: any) { return NextResponse.json({ error: e?.message }, { status: 500 }); }
+  } catch (e) { return NextResponse.json({ error: errorMessage(e) }, { status: 500 }); }
 }
