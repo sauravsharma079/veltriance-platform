@@ -11,6 +11,7 @@ type Sig = { id: string; party: string; name: string; email: string; title: stri
 type Comment = { id: string; authorType: string; authorName: string; body: string; internal: boolean; createdAt: string; versionNumber: number | null };
 type Ver = { versionNumber: number; changeNote: string | null; source: string; createdByName: string | null; createdAt: string };
 type Contract = { id: string; contractNumber: string; title: string; type: string; status: string; description: string | null; value: string | null; currency: string; startDate: string | null; endDate: string | null; autoRenew: boolean; noticeDays: number; currentVersion: number; ownerId: string; owner: { id: string; name: string }; supplier: { id: string; name: string; contactEmail: string | null; contactName: string | null } | null; signatories: Sig[]; comments: Comment[]; versions: Ver[]; approvedAt: string | null; publishedAt: string | null; terminationReason: string | null };
+type Proposal = { id: string; tool: string; input: { body?: string; changeNote?: string; message?: string; internal?: boolean }; rationale: string | null; createdAt: string };
 type Invite = { signatoryId: string; name: string; email: string; party: string; link: string; emailed: boolean; emailNote?: string };
 
 const TABS = ["Document", "Negotiation", "Signatures", "Details"] as const;
@@ -34,6 +35,7 @@ export default function ContractPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [aiInstruction, setAiInstruction] = useState("");
   const [comment, setComment] = useState(""); const [internal, setInternal] = useState(true);
   const [sig, setSig] = useState({ party: "SUPPLIER", name: "", email: "", title: "" });
@@ -45,6 +47,8 @@ export default function ContractPage() {
     if (!res.ok) { setError((await res.json().catch(() => null))?.error ?? "Could not load the contract"); return; }
     const d = await res.json();
     setC(d.contract); setBodies(d.bodies);
+    // The assistant's pending proposals for this contract (only visible if Agents is licensed).
+    fetch(`/api/agents/actions?contractId=${id}`).then(r => r.ok ? r.json() : { actions: [] }).then(a => setProposals(a.actions ?? [])).catch(() => {});
     setDraft(prev => (prev === "" || prev === bodiesRef.current[d.contract.currentVersion]) ? (d.bodies[d.contract.currentVersion] ?? "") : prev);
     bodiesRef.current = d.bodies;
   }, [id]);
@@ -71,13 +75,37 @@ export default function ContractPage() {
   const transition = (action: string, reason?: string) => call(action, `/api/contracts/${id}/transition`, "POST", { action, reason }, d => { if (d.invites?.length) { setInvites(d.invites); setTab("Signatures"); } });
   const ask = (reason: string) => { const r = prompt(reason); return r?.trim() || null; };
 
+  async function decideProposal(pid: string, decision: "approve" | "reject") {
+    setBusy(`p-${pid}`); setError(null); setInfo(null);
+    const res = await fetch(`/api/agents/actions/${pid}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }) });
+    const d = await res.json().catch(() => null);
+    setBusy(null);
+    if (!res.ok) { setError(d?.error ?? "Could not record your decision"); return; }
+    if (d.action?.status === "FAILED") setError(`It couldn't be applied: ${d.action.error}`);
+    else setInfo(decision === "approve" ? "Applied — the new version is now the current one." : "Proposal rejected.");
+    setDraft(""); // show the newly saved version
+    await load();
+  }
+
+  // Repeated runs pile up proposals. Show only the newest revision and newest note; the rest are stale.
+  const newest = (tool: (t: string) => boolean) => proposals.find(p => tool(p.tool));
+  const shownIds = new Set([newest(t => t === "propose_revision")?.id, newest(t => t !== "propose_revision")?.id].filter(Boolean));
+  const shownProposals = proposals.filter(p => shownIds.has(p.id));
+  const olderProposals = proposals.filter(p => !shownIds.has(p.id));
+
+  async function discardOlder() {
+    setBusy("discard"); setError(null);
+    for (const p of olderProposals) await fetch(`/api/agents/actions/${p.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision: "reject" }) });
+    setBusy(null); await load();
+  }
+
   async function runAi(instruction?: string) {
     setBusy("ai"); setError(null); setInfo(null);
     const res = await fetch("/api/agents/contract-negotiator/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: { contractId: id, instruction } }) });
     const d = await res.json().catch(() => null);
     setBusy(null);
     if (!res.ok) { setError(d?.error ?? "The assistant could not run"); return; }
-    setInfo(d.run.status === "WAITING_HUMAN" ? "The assistant has a proposal waiting for your approval in Agents → Waiting for your approval." : d.run.status === "FAILED" ? `The assistant failed: ${d.run.error}` : `Assistant: ${d.run.summary}`);
+    setInfo(d.run.status === "WAITING_HUMAN" ? "The assistant has finished — review its proposal below and approve it to apply it." : d.run.status === "FAILED" ? `The assistant failed: ${d.run.error}` : `Assistant: ${d.run.summary}`);
     await load();
     setDraft(""); // pick up any newly saved version
   }
@@ -141,6 +169,38 @@ export default function ContractPage() {
         </div>
       )}
 
+      {olderProposals.length > 0 && (
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span>{olderProposals.length} older assistant proposal{olderProposals.length > 1 ? "s" : ""} from earlier runs {olderProposals.length > 1 ? "are" : "is"} also waiting.</span>
+          <button disabled={!!busy} onClick={discardOlder} className={ghost}>Discard older proposals</button>
+        </div>
+      )}
+      {shownProposals.map(p => {
+        const proposed = p.input.body;
+        const lines = proposed !== undefined && current.trim() ? diffLines(current, proposed) : null;
+        return (
+          <div key={p.id} className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+            <p className="text-sm font-medium text-amber-900 flex items-center gap-1.5"><Sparkles className="size-4" />
+              {p.tool === "propose_revision" ? "The assistant proposes a new version" : p.tool === "flag_contract_renewal" ? "Renewal alert waiting to be posted" : p.input.internal ? "The assistant wants to add an internal note" : "The assistant wants to post a comment to the supplier"}
+            </p>
+            {p.input.changeNote && <p className="text-xs text-amber-800">{p.input.changeNote}</p>}
+            {(p.input.body || p.input.message) && p.tool !== "propose_revision" && <p className="text-sm text-gray-700 whitespace-pre-wrap">{p.input.body ?? p.input.message}</p>}
+            {proposed !== undefined && (
+              <details open className="text-xs">
+                <summary className="cursor-pointer text-amber-800">{lines ? "Show what would change" : "Show the proposed text"}</summary>
+                <div className="mt-2 bg-white border border-amber-100 rounded-lg p-3 font-mono leading-relaxed max-h-96 overflow-auto">
+                  {lines ? lines.map((l, i) => <div key={i} className={l.type === "add" ? "bg-emerald-50 text-emerald-800" : l.type === "del" ? "bg-red-50 text-red-700 line-through" : "text-gray-400"}>{l.type === "add" ? "+ " : l.type === "del" ? "− " : "  "}{l.text || " "}</div>) : <pre className="whitespace-pre-wrap text-gray-700">{proposed}</pre>}
+                </div>
+              </details>
+            )}
+            <div className="flex gap-2">
+              <button disabled={!!busy} onClick={() => decideProposal(p.id, "approve")} className={primary}>{busy === `p-${p.id}` ? "Applying…" : "Approve & apply"}</button>
+              <button disabled={!!busy} onClick={() => decideProposal(p.id, "reject")} className={ghost}>Reject</button>
+            </div>
+          </div>
+        );
+      })}
+
       <div className="border-b border-gray-200 flex gap-5">
         {TABS.map(t => <button key={t} onClick={() => setTab(t)} className={`pb-2 text-sm ${tab === t ? "border-b-2 border-[#1A2A52] text-gray-900 font-medium" : "text-gray-400"}`}>{t}{t === "Signatures" && c.signatories.length > 0 ? ` (${c.signatories.filter(s => s.status === "SIGNED").length}/${c.signatories.length})` : ""}</button>)}
       </div>
@@ -151,8 +211,8 @@ export default function ContractPage() {
             {editable && (
               <>
                 <input value={aiInstruction} onChange={e => setAiInstruction(e.target.value)} placeholder={current ? "Optional: tell the assistant what to focus on…" : "Optional: anything the first draft should include…"} className={`${input} max-w-sm`} />
-                <button disabled={!!busy || dirty} title={dirty ? "Save your changes first" : undefined} onClick={() => runAi(aiInstruction || (current ? undefined : "Write a complete first draft of this agreement."))} className={primary}>
-                  {busy === "ai" ? <Loader2 className="size-3.5 animate-spin inline mr-1" /> : <Sparkles className="size-3.5 inline mr-1" />}{current ? "Review against playbook" : "Draft with AI"}
+                <button disabled={!!busy || dirty || proposals.some(p => p.tool === "propose_revision")} title={dirty ? "Save your changes first" : proposals.some(p => p.tool === "propose_revision") ? "Approve or reject the pending proposal first" : undefined} onClick={() => runAi(aiInstruction || (current ? undefined : "Write a complete first draft of this agreement."))} className={primary}>
+                  {busy === "ai" ? <Loader2 className="size-3.5 animate-spin inline mr-1" /> : <Sparkles className="size-3.5 inline mr-1" />}{busy === "ai" ? "Working — this can take a minute or two…" : current ? "Review against playbook" : "Draft with AI"}
                 </button>
               </>
             )}
