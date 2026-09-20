@@ -84,7 +84,7 @@ async function callProvider(provider: LlmProvider, system: string, messages: Msg
       }),
       signal: timeout,
     });
-    if (!res.ok) throw new LlmError(`Groq ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+    if (!res.ok) throw await apiError("Groq", res);
     const json = await res.json();
     const content = json?.choices?.[0]?.message?.content ?? "";
     if (!content) console.warn("[llm] Groq returned no content", { finish_reason: json?.choices?.[0]?.finish_reason, usage: json?.usage });
@@ -97,7 +97,7 @@ async function callProvider(provider: LlmProvider, system: string, messages: Msg
       contents: messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
       generationConfig: { temperature: 0.1, maxOutputTokens: Math.max(maxTokens, 8192), responseMimeType: "application/json" },
     }, timeout);
-    if (!res.ok) throw new LlmError(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+    if (!res.ok) throw await apiError("Gemini", res);
     return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   }
 
@@ -113,8 +113,32 @@ async function callProvider(provider: LlmProvider, system: string, messages: Msg
     }),
     signal: timeout,
   });
-  if (!res.ok) throw new LlmError(`Anthropic ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+  if (!res.ok) throw await apiError("Anthropic", res);
   return (await res.json())?.content?.find((c: { type: string }) => c.type === "text")?.text ?? "";
+}
+
+/**
+ * Providers return a JSON blob on error. Keep the useful sentence (and any "try again in …" hint the
+ * retry logic reads) rather than dumping the whole object into a message a person will see.
+ */
+async function apiError(provider: string, res: Response): Promise<LlmError> {
+  const raw = await res.text().catch(() => "");
+  let msg = raw;
+  try { const j = JSON.parse(raw); msg = j?.error?.message ?? j?.message ?? raw; } catch { /* not JSON */ }
+  return new LlmError(`${provider} ${res.status}: ${String(msg).replace(/\s+/g, " ").slice(0, 300)}`, res.status);
+}
+
+/** A spent quota (daily/plan limit) won't recover in seconds, so retrying it only makes people wait. */
+function isSpentQuota(e: unknown): boolean {
+  return e instanceof LlmError && e.status === 429 && /exceeded your current quota|per day|\bTPD\b|billing details|quota exceeded/i.test(e.message);
+}
+
+const PROVIDER_LABEL: Record<LlmProvider, string> = { groq: "Groq", gemini: "Gemini", anthropic: "Claude" };
+
+/** When every provider we tried is rate-limited, say so plainly instead of surfacing one provider's raw error. */
+function exhausted(providers: LlmProvider[], errors: unknown[]): LlmError | null {
+  if (errors.length === 0 || !errors.every(e => e instanceof LlmError && e.status === 429)) return null;
+  return new LlmError(`The AI service is at its usage limit right now (${providers.map(p => PROVIDER_LABEL[p]).join(" and ")}). That's a limit of the free plan and usually clears within a few hours; adding a paid API key removes it. Please try again later.`, 429);
 }
 
 export class LlmError extends Error {
@@ -152,6 +176,7 @@ async function jsonWith<T>(provider: LlmProvider, opts: { system: string; messag
       if (e instanceof LlmError && e.message.includes("json_validate_failed")) strictJson = false; // retry without Groq's strict mode
       if (e instanceof LlmError && e.message.includes("tool_use_failed"))
         messages.push({ role: "user", content: "Reminder: you cannot call tools natively. Reply with ONLY the JSON object described in your instructions." });
+      if (isSpentQuota(e)) throw e; // fail over to the next provider straight away
       if (transient && attempt < 4) {
         // Free tiers say exactly how long to back off ("try again in 14.07s") — honour it, capped.
         const hinted = retryAfterSeconds(e.message);
@@ -178,15 +203,16 @@ export async function llmJson<T>(opts: { system: string; messages: Msg[]; schema
   const providers = configuredProviders();
   if (providers.length === 0) throw new LlmError("No LLM configured — set GROQ_API_KEY (free) or GEMINI_API_KEY in the environment");
   let last: unknown;
+  const errors: unknown[] = [];
   for (const p of providers) {
     try { return await jsonWith(p, opts); }
     catch (e) {
-      last = e;
+      last = e; errors.push(e);
       if (!(e instanceof LlmError)) throw e;
       console.warn(`[llm] ${p} failed (${e.message.slice(0, 120)})${providers.length > 1 ? " — trying the next provider" : ""}`);
     }
   }
-  throw last;
+  throw exhausted(providers, errors) ?? last;
 }
 
 /**
@@ -198,15 +224,16 @@ export async function llmText(opts: { system: string; user: string; maxTokens?: 
   const providers = configuredProviders();
   if (providers.length === 0) throw new LlmError("No LLM configured — set GROQ_API_KEY (free) or GEMINI_API_KEY in the environment");
   let last: unknown;
+  const errors: unknown[] = [];
   for (const p of providers) {
     try { return await textWith(p, opts); }
     catch (e) {
-      last = e;
+      last = e; errors.push(e);
       if (!(e instanceof LlmError)) throw e;
       console.warn(`[llm] ${p} failed (${e.message.slice(0, 120)})${providers.length > 1 ? " — trying the next provider" : ""}`);
     }
   }
-  throw last;
+  throw exhausted(providers, errors) ?? last;
 }
 
 async function textWith(provider: LlmProvider, opts: { system: string; user: string; maxTokens?: number }): Promise<string> {
@@ -220,7 +247,7 @@ async function textWith(provider: LlmProvider, opts: { system: string; user: str
     } catch (e) {
       lastError = e;
       const transient = e instanceof LlmError && (e.status === 429 || (e.status ?? 0) >= 500 || e.status === undefined);
-      if (!transient) throw e;
+      if (!transient || isSpentQuota(e)) throw e;
       const hinted = e instanceof Error ? retryAfterSeconds(e.message) : null;
       if (hinted !== null && hinted > 30) throw e; // daily quota — let the caller fail over
       await new Promise(r => setTimeout(r, hinted !== null ? Math.ceil(hinted + 1) * 1000 : 2000 * (attempt + 1)));
@@ -239,7 +266,7 @@ async function callProviderText(provider: LlmProvider, system: string, user: str
       body: JSON.stringify({ model, temperature: 0.2, max_tokens: maxTokens, ...(model.startsWith("openai/gpt-oss") && { reasoning_effort: "low" }), messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
       signal: timeout,
     });
-    if (!res.ok) throw new LlmError(`Groq ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+    if (!res.ok) throw await apiError("Groq", res);
     const json = await res.json();
     if (json?.choices?.[0]?.finish_reason === "length") throw new LlmError("The document is too long to generate in one go", 413);
     return json?.choices?.[0]?.message?.content ?? "";
@@ -249,7 +276,7 @@ async function callProviderText(provider: LlmProvider, system: string, user: str
       systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }],
       generationConfig: { temperature: 0.2, maxOutputTokens: Math.max(maxTokens, 16000) },
     }, timeout);
-    if (!res.ok) throw new LlmError(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+    if (!res.ok) throw await apiError("Gemini", res);
     return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   }
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -257,6 +284,6 @@ async function callProviderText(provider: LlmProvider, system: string, user: str
     body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5", max_tokens: maxTokens, temperature: 0.2, system, messages: [{ role: "user", content: user }] }),
     signal: timeout,
   });
-  if (!res.ok) throw new LlmError(`Anthropic ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+  if (!res.ok) throw await apiError("Anthropic", res);
   return (await res.json())?.content?.find((c: { type: string }) => c.type === "text")?.text ?? "";
 }
