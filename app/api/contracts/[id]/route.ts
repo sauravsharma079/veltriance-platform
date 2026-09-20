@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { contractAccess } from "@/lib/contracts-access";
 import { CONTRACT_TYPES, EDITABLE } from "@/lib/contracts";
-import { approvalVerdict, eligibleApprovers } from "@/lib/contract-approval";
+import { approvalVerdict, approverMayView, eligibleApprovers } from "@/lib/contract-approval";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -25,7 +25,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   });
   if (!contract) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // An Approver only sees a contract that has been put to them.
-  if (a.profile.role === "APPROVER" && (contract.status !== "PENDING_APPROVAL" || (contract.approverId && contract.approverId !== a.profile.id)))
+  // ...or one they were asked to decide on, or already approved (so the page still works after they act).
+  if (a.profile.role === "APPROVER" && !approverMayView(contract, a.profile.id))
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Text for the latest few versions (current + what to diff against); older ones on request.
   const wanted = contract.versions.slice(0, 5).map(v => v.versionNumber);

@@ -96,5 +96,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     action: action === "approve" ? "APPROVED" : action === "cancel" ? "CANCELLED" : action === "return" ? "REJECTED" : action === "submit" ? "SUBMITTED" : "UPDATED",
     entity: "CONTRACT", entityId: id, entityLabel: `${contract.contractNumber} ${contract.title}`, details: { transition: action, to: rule.to, reason, ...(selfApproval && { selfApproved: true, note: "No other approver was available" }), ...(action === "submit" && { approvers: recipients.map(r => r.name) }) },
   });
-  return NextResponse.json({ status: rule.to, invites, notified, selfApproval });
+  // Signing links are credentials: they're returned only to the people who run the contract, never to an
+  // Approver (who could otherwise sign on someone else's behalf). Invitees are still emailed either way.
+  return NextResponse.json({ status: rule.to, invites: a.profile.role === "APPROVER" ? [] : invites, notified, selfApproval });
 }

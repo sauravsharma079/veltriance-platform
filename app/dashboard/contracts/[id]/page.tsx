@@ -45,10 +45,17 @@ export default function ContractPage() {
   const [sig, setSig] = useState({ party: "SUPPLIER", name: "", email: "", title: "" });
   const [copied, setCopied] = useState<string | null>(null);
   const autoDrafted = useRef(false);
+  const loadedOnce = useRef(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/contracts/${id}`);
-    if (!res.ok) { setError((await res.json().catch(() => null))?.error ?? "Could not load the contract"); return; }
+    if (!res.ok) {
+      // An approver loses sight of a contract once it's back with its owner. If we'd already
+      // loaded it, that means their decision went through — say so instead of showing an error.
+      if (res.status === 404 && loadedOnce.current) { setInfo("Your decision has been recorded. Taking you back to your dashboard…"); setTimeout(() => window.location.assign("/dashboard"), 1800); return; }
+      setError((await res.json().catch(() => null))?.error ?? "Could not load the contract"); return;
+    }
+    loadedOnce.current = true;
     const d = await res.json();
     setC(d.contract); setBodies(d.bodies); setApproval(d.approval ?? null);
     // The assistant's pending proposals for this contract (only visible if Agents is licensed).
@@ -63,7 +70,9 @@ export default function ContractPage() {
   const current = c ? (bodies[c.currentVersion] ?? "") : "";
   const previous = c && c.currentVersion > 1 ? bodies[c.currentVersion - 1] : undefined;
   const dirty = c ? draft !== current : false;
-  const editable = !!c && EDITABLE.includes(c.status);
+  // Approvers are there to decide, not to edit: everything except approve / return is hidden for them.
+  const isApprover = approval?.meRole === "APPROVER";
+  const editable = !!c && EDITABLE.includes(c.status) && !isApprover;
   const diff = useMemo(() => (showDiff && previous !== undefined ? diffLines(previous, current) : null), [showDiff, previous, current]);
 
   async function call(key: string, url: string, method: string, body?: unknown, ok?: (d: any) => void) { // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -154,14 +163,14 @@ export default function ContractPage() {
 
       {/* Lifecycle actions */}
       <div className="flex flex-wrap gap-2">
-        {c.status === "DRAFT" && <button disabled={!!busy} onClick={() => transition("share")} className={ghost}>Share with supplier</button>}
-        {["DRAFT", "NEGOTIATION"].includes(c.status) && <button disabled={!!busy || dirty} title={dirty ? "Save your changes first" : undefined} onClick={() => setChoosing(x => !x)} className={primary}>Submit for approval</button>}
+        {!isApprover && c.status === "DRAFT" && <button disabled={!!busy} onClick={() => transition("share")} className={ghost}>Share with supplier</button>}
+        {!isApprover && ["DRAFT", "NEGOTIATION"].includes(c.status) && <button disabled={!!busy || dirty} title={dirty ? "Save your changes first" : undefined} onClick={() => setChoosing(x => !x)} className={primary}>Submit for approval</button>}
         {c.status === "PENDING_APPROVAL" && (approval?.canApprove
           ? <button disabled={!!busy} onClick={() => transition("approve")} className={primary}>{approval.selfApproval ? "Approve (self-approval)" : "Approve"} &amp; send for signature</button>
           : <span className="text-xs text-gray-400 self-center">{approval?.reason ?? (isOwner ? "You own this contract — someone else must approve it." : "This contract is waiting on someone else.")}</span>)}
         {c.status === "PENDING_APPROVAL" && <button disabled={!!busy} onClick={() => { const r = ask("Why are you sending it back?"); if (r) transition("return", r); }} className={ghost}>Return for changes</button>}
-        {["DRAFT", "NEGOTIATION", "PENDING_APPROVAL", "PENDING_SIGNATURE"].includes(c.status) && <button disabled={!!busy} onClick={() => confirm("Cancel this contract?") && transition("cancel")} className={ghost}>Cancel</button>}
-        {c.status === "ACTIVE" && <button disabled={!!busy} onClick={() => { const r = ask("Reason for terminating"); if (r) transition("terminate", r); }} className={ghost}>Terminate</button>}
+        {!isApprover && ["DRAFT", "NEGOTIATION", "PENDING_APPROVAL", "PENDING_SIGNATURE"].includes(c.status) && <button disabled={!!busy} onClick={() => confirm("Cancel this contract?") && transition("cancel")} className={ghost}>Cancel</button>}
+        {!isApprover && c.status === "ACTIVE" && <button disabled={!!busy} onClick={() => { const r = ask("Reason for terminating"); if (r) transition("terminate", r); }} className={ghost}>Terminate</button>}
       </div>
 
       {choosing && (
@@ -194,7 +203,7 @@ export default function ContractPage() {
       )}
 
       {/* Links returned by share / approve — the only time they're shown */}
-      {invites.length > 0 && (
+      {!isApprover && invites.length > 0 && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-2">
           <p className="text-xs font-medium text-emerald-800">Personal links issued. Copy any that weren&apos;t emailed — for security they aren&apos;t shown again (you can re-issue one anytime).</p>
           {invites.map(i => (
@@ -289,13 +298,13 @@ export default function ContractPage() {
                 <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{m.body}</p>
               </div>
             ))}
-            <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+            {!isApprover && <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
               <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} placeholder="Add a comment…" className={input} />
               <div className="flex items-center gap-3">
                 <button disabled={!comment.trim() || !!busy} onClick={() => call("comment", `/api/contracts/${id}/comments`, "POST", { body: comment, internal }, () => setComment(""))} className={primary}><Send className="size-3.5 inline mr-1" />Post</button>
                 <label className="text-xs text-gray-500 flex items-center gap-1"><input type="checkbox" checked={internal} onChange={e => setInternal(e.target.checked)} />Internal only (hidden from supplier)</label>
               </div>
-            </div>
+            </div>}
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Versions</p>
@@ -326,15 +335,15 @@ export default function ContractPage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.status === "SIGNED" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{s.status.toLowerCase()}</span>
-                  {s.status !== "SIGNED" && (c.status === "PENDING_SIGNATURE" || (c.status === "NEGOTIATION" && s.party === "SUPPLIER")) && (
+                  {!isApprover && s.status !== "SIGNED" && (c.status === "PENDING_SIGNATURE" || (c.status === "NEGOTIATION" && s.party === "SUPPLIER")) && (
                     <button disabled={!!busy} onClick={() => call(`inv-${s.id}`, `/api/contracts/${id}/signatories/${s.id}/invite`, "POST", undefined, d => setInvites([d.invite]))} className={ghost}>{s.invitedAt ? "Re-issue link" : "Send link"}</button>
                   )}
-                  {["DRAFT", "NEGOTIATION", "PENDING_APPROVAL"].includes(c.status) && <button onClick={() => call(`del-${s.id}`, `/api/contracts/${id}/signatories/${s.id}`, "DELETE")} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 className="size-3.5" /></button>}
+                  {!isApprover && ["DRAFT", "NEGOTIATION", "PENDING_APPROVAL"].includes(c.status) && <button onClick={() => call(`del-${s.id}`, `/api/contracts/${id}/signatories/${s.id}`, "DELETE")} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 className="size-3.5" /></button>}
                 </div>
               </div>
             ))}
           </div>
-          {["DRAFT", "NEGOTIATION", "PENDING_APPROVAL"].includes(c.status) && (
+          {!isApprover && ["DRAFT", "NEGOTIATION", "PENDING_APPROVAL"].includes(c.status) && (
             <form onSubmit={async e => { e.preventDefault(); if (await call("addsig", `/api/contracts/${id}/signatories`, "POST", { ...sig, title: sig.title || undefined })) setSig({ ...sig, name: "", email: "", title: "" }); }} className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
               <label className="text-xs text-gray-500">Side<select value={sig.party} onChange={e => setSig({ ...sig, party: e.target.value })} className={input}><option value="SUPPLIER">Supplier</option><option value="BUYER">Our company</option></select></label>
               <label className="text-xs text-gray-500">Name<input required value={sig.name} onChange={e => setSig({ ...sig, name: e.target.value })} className={input} /></label>

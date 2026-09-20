@@ -54,3 +54,13 @@ export async function notifyApprovers(opts: {
   }
   return { emailed, failed, ...(note && { note }) };
 }
+
+/**
+ * Which contracts an Approver may open: ones put to them, ones they already decided on (so the
+ * page still works after they approve), or an unassigned one awaiting approval. Nothing else —
+ * they aren't part of the contracts module.
+ */
+export function approverMayView(contract: { status: string; approverId: string | null; approvedById: string | null }, userId: string): boolean {
+  if (contract.approverId === userId || contract.approvedById === userId) return true;
+  return contract.status === "PENDING_APPROVAL" && !contract.approverId;
+}
