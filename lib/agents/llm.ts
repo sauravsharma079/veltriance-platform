@@ -21,13 +21,28 @@ export function activeProvider(): LlmProvider | null {
   return (["groq", "gemini", "anthropic"] as LlmProvider[]).find(p => has[p]) ?? null;
 }
 
+/** Every configured provider, primary first — used to fail over when one is exhausted. */
+export function configuredProviders(): LlmProvider[] {
+  const primary = activeProvider();
+  if (!primary) return [];
+  const has: Record<LlmProvider, boolean> = { groq: !!process.env.GROQ_API_KEY, gemini: !!process.env.GEMINI_API_KEY, anthropic: !!process.env.ANTHROPIC_API_KEY };
+  return [primary, ...(["groq", "gemini", "anthropic"] as LlmProvider[]).filter(p => p !== primary && has[p])];
+}
+
 export function llmConfigured(): boolean {
   return activeProvider() !== null;
 }
 
+/** Seconds a provider tells us to wait ("try again in 9m39s" / "14.07s"), or null. */
+function retryAfterSeconds(message: string): number | null {
+  const m = /try again in (?:(\d+)m)?(?:([\d.]+)s)?/i.exec(message);
+  if (!m || (!m[1] && !m[2])) return null;
+  return (m[1] ? parseInt(m[1]) * 60 : 0) + (m[2] ? parseFloat(m[2]) : 0);
+}
+
 type Msg = { role: "user" | "assistant"; content: string };
 
-async function callProvider(provider: LlmProvider, system: string, messages: Msg[]): Promise<string> {
+async function callProvider(provider: LlmProvider, system: string, messages: Msg[], maxTokens: number, strictJson = true): Promise<string> {
   const timeout = AbortSignal.timeout(30_000);
 
   if (provider === "groq") {
@@ -40,26 +55,30 @@ async function callProvider(provider: LlmProvider, system: string, messages: Msg
         temperature: 0.1,
         // gpt-oss is a reasoning model: its hidden reasoning counts against this
         // budget, and a truncated reply comes back as a 400 "failed to generate JSON".
-        max_tokens: 4096,
+        max_tokens: Math.max(maxTokens, 8192),
         ...(model.startsWith("openai/gpt-oss") && { reasoning_effort: "low" }),
-        response_format: { type: "json_object" },
+        // Groq's strict JSON mode rejects some generations outright; we validate the reply ourselves anyway.
+        ...(strictJson && { response_format: { type: "json_object" } }),
         messages: [{ role: "system", content: system }, ...messages],
       }),
       signal: timeout,
     });
     if (!res.ok) throw new LlmError(`Groq ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
-    return (await res.json())?.choices?.[0]?.message?.content ?? "";
+    const json = await res.json();
+    const content = json?.choices?.[0]?.message?.content ?? "";
+    if (!content) console.warn("[llm] Groq returned no content", { finish_reason: json?.choices?.[0]?.finish_reason, usage: json?.usage });
+    return content;
   }
 
   if (provider === "gemini") {
-    const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents: messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
-        generationConfig: { temperature: 0.1, maxOutputTokens: 1500, responseMimeType: "application/json" },
+        generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
       }),
       signal: timeout,
     });
@@ -72,7 +91,7 @@ async function callProvider(provider: LlmProvider, system: string, messages: Msg
     headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
-      max_tokens: 1500,
+      max_tokens: maxTokens,
       temperature: 0.1,
       system: system + "\n\nRespond with ONLY the JSON object, no prose or code fences.",
       messages,
@@ -103,26 +122,33 @@ function extractJson(raw: string): unknown {
  * validation error if the first reply doesn't match, and once more on a
  * rate-limit (free tiers hit 429s often).
  */
-export async function llmJson<T>(opts: { system: string; messages: Msg[]; schema: z.ZodType<T> }): Promise<T> {
-  const provider = activeProvider();
-  if (!provider) throw new LlmError("No LLM configured — set GROQ_API_KEY (free) or GEMINI_API_KEY in the environment");
-
+async function jsonWith<T>(provider: LlmProvider, opts: { system: string; messages: Msg[]; schema: z.ZodType<T>; maxTokens?: number }): Promise<T> {
   const messages = [...opts.messages];
   let lastError = "";
-  for (let attempt = 0; attempt < 3; attempt++) {
+  let strictJson = true;
+  for (let attempt = 0; attempt < 5; attempt++) {
     let raw: string;
     try {
-      raw = await callProvider(provider, opts.system, messages);
+      raw = await callProvider(provider, opts.system, messages, opts.maxTokens ?? 1500, strictJson);
     } catch (e) {
       // 429 = rate limited; 400/5xx from a free tier is usually a one-off bad
       // generation or a blip, and a second try at low temperature typically works.
       const transient = e instanceof LlmError && (e.status === 429 || e.status === 400 || (e.status ?? 0) >= 500);
-      if (transient && attempt < 2) {
-        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+      if (e instanceof LlmError && e.message.includes("json_validate_failed")) strictJson = false; // retry without Groq's strict mode
+      if (e instanceof LlmError && e.message.includes("tool_use_failed"))
+        messages.push({ role: "user", content: "Reminder: you cannot call tools natively. Reply with ONLY the JSON object described in your instructions." });
+      if (transient && attempt < 4) {
+        // Free tiers say exactly how long to back off ("try again in 14.07s") — honour it, capped.
+        const hinted = retryAfterSeconds(e.message);
+        if (hinted !== null && hinted > 30) throw e; // a daily quota, not a blip — let the caller fail over
+        await new Promise(r => setTimeout(r, hinted !== null ? Math.ceil(hinted + 1) * 1000 : 1500 * (attempt + 1)));
         continue;
       }
       throw e;
     }
+    // A blank reply (seen intermittently from free-tier reasoning models) has nothing to
+    // correct — just ask again rather than feeding an empty turn back.
+    if (!raw.trim()) { lastError = "The model returned an empty reply"; continue; }
     try {
       return opts.schema.parse(extractJson(raw));
     } catch (e) {
@@ -131,4 +157,92 @@ export async function llmJson<T>(opts: { system: string; messages: Msg[]; schema
     }
   }
   throw new LlmError(`Model did not return a valid reply: ${lastError}`);
+}
+
+export async function llmJson<T>(opts: { system: string; messages: Msg[]; schema: z.ZodType<T>; maxTokens?: number }): Promise<T> {
+  const providers = configuredProviders();
+  if (providers.length === 0) throw new LlmError("No LLM configured — set GROQ_API_KEY (free) or GEMINI_API_KEY in the environment");
+  let last: unknown;
+  for (const p of providers) {
+    try { return await jsonWith(p, opts); }
+    catch (e) {
+      last = e;
+      if (!(e instanceof LlmError)) throw e;
+      console.warn(`[llm] ${p} failed (${e.message.slice(0, 120)})${providers.length > 1 ? " — trying the next provider" : ""}`);
+    }
+  }
+  throw last;
+}
+
+/**
+ * Plain-text generation for long documents (a whole contract). Putting a long
+ * document inside a JSON string is error-prone — escaping mistakes get the whole
+ * reply rejected — so agents use JSON only for decisions and this for prose.
+ */
+export async function llmText(opts: { system: string; user: string; maxTokens?: number }): Promise<string> {
+  const providers = configuredProviders();
+  if (providers.length === 0) throw new LlmError("No LLM configured — set GROQ_API_KEY (free) or GEMINI_API_KEY in the environment");
+  let last: unknown;
+  for (const p of providers) {
+    try { return await textWith(p, opts); }
+    catch (e) {
+      last = e;
+      if (!(e instanceof LlmError)) throw e;
+      console.warn(`[llm] ${p} failed (${e.message.slice(0, 120)})${providers.length > 1 ? " — trying the next provider" : ""}`);
+    }
+  }
+  throw last;
+}
+
+async function textWith(provider: LlmProvider, opts: { system: string; user: string; maxTokens?: number }): Promise<string> {
+  const maxTokens = opts.maxTokens ?? 6000;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const text = await callProviderText(provider, opts.system, opts.user, maxTokens);
+      if (text.trim().length > 0) return text.trim().replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/, "");
+      lastError = new LlmError("The model returned an empty reply");
+    } catch (e) {
+      lastError = e;
+      const transient = e instanceof LlmError && (e.status === 429 || (e.status ?? 0) >= 500 || e.status === undefined);
+      if (!transient) throw e;
+      const hinted = e instanceof Error ? retryAfterSeconds(e.message) : null;
+      if (hinted !== null && hinted > 30) throw e; // daily quota — let the caller fail over
+      await new Promise(r => setTimeout(r, hinted !== null ? Math.ceil(hinted + 1) * 1000 : 2000 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new LlmError("Text generation failed");
+}
+
+async function callProviderText(provider: LlmProvider, system: string, user: string, maxTokens: number): Promise<string> {
+  const timeout = AbortSignal.timeout(90_000);
+  if (provider === "groq") {
+    const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+      body: JSON.stringify({ model, temperature: 0.2, max_tokens: maxTokens, ...(model.startsWith("openai/gpt-oss") && { reasoning_effort: "low" }), messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+      signal: timeout,
+    });
+    if (!res.ok) throw new LlmError(`Groq ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+    const json = await res.json();
+    if (json?.choices?.[0]?.finish_reason === "length") throw new LlmError("The document is too long to generate in one go", 413);
+    return json?.choices?.[0]?.message?.content ?? "";
+  }
+  if (provider === "gemini") {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }], generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens } }),
+      signal: timeout,
+    });
+    if (!res.ok) throw new LlmError(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+    return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  }
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5", max_tokens: maxTokens, temperature: 0.2, system, messages: [{ role: "user", content: user }] }),
+    signal: timeout,
+  });
+  if (!res.ok) throw new LlmError(`Anthropic ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
+  return (await res.json())?.content?.find((c: { type: string }) => c.type === "text")?.text ?? "";
 }

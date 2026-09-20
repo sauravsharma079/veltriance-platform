@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ApprovalStepType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { hasModule } from "@/lib/licensing";
 import { getCurrentOrganization } from "@/lib/tenant";
 
 export async function GET() {
@@ -61,7 +62,27 @@ export async function GET() {
     createdAt: string;
   };
 
+  // Contracts approaching their renewal / notice deadline (only orgs licensed for Contracts).
+  const contractAlerts: Notification[] = [];
+  if ((profile.role === "PROCUREMENT" || profile.role === "ADMIN") && hasModule(organization, "CONTRACTS")) {
+    const soon = await prisma.contract.findMany({
+      where: { organizationId: orgId, status: "ACTIVE", endDate: { not: null, lte: new Date(Date.now() + 120 * 86_400_000) } },
+      select: { id: true, title: true, contractNumber: true, endDate: true, noticeDays: true }, orderBy: { endDate: "asc" }, take: 20,
+    });
+    for (const c of soon) {
+      const days = Math.ceil((c.endDate!.getTime() - Date.now()) / 86_400_000);
+      if (days > c.noticeDays + 30) continue;
+      contractAlerts.push({
+        id: `contract-${c.id}`, type: "contract_renewal",
+        title: days < 0 ? "Contract has ended" : `Contract ends in ${days} day${days === 1 ? "" : "s"}`,
+        body: `${c.contractNumber} — ${c.title}`, href: `/dashboard/contracts/${c.id}`,
+        urgent: days <= c.noticeDays, createdAt: new Date().toISOString(),
+      });
+    }
+  }
+
   const notifications: Notification[] = [
+    ...contractAlerts,
     ...pendingSteps.map(s => ({
       id: `approval-${s.id}`,
       type: "approval_needed",

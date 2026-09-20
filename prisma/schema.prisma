@@ -47,6 +47,8 @@ model Organization {
   catalogs        Catalog[]
   punchoutSessions PunchoutSession[]
   agentRuns        AgentRun[]
+  contracts        Contract[]
+  contractClauses  ContractClause[]
   agentActions     AgentAction[]
 
   @@index([slug])
@@ -116,6 +118,7 @@ model User {
   @@index([department])
   @@index([organizationId])
   @@unique([organizationId, employeeId])
+  ownedContracts  Contract[]     @relation("ContractOwner")
 }
 
 // ───────────────────────────── Suppliers ────────────────────────────────────
@@ -213,6 +216,7 @@ model Supplier {
   @@index([organizationId])
   @@index([assignedUserId])
   @@unique([organizationId, code])
+  contracts       Contract[]
 }
 
 model SupplierContact {
@@ -1047,4 +1051,136 @@ model AgentAction {
 
   @@index([organizationId, status])
   @@index([runId])
+}
+
+
+// ───────────────────────────── Contracts ────────────────────────────────────
+
+enum ContractStatus {
+  DRAFT
+  NEGOTIATION
+  PENDING_APPROVAL
+  PENDING_SIGNATURE
+  ACTIVE          // fully signed and published to the repository
+  EXPIRED
+  TERMINATED
+  CANCELLED
+}
+
+enum ContractSignatoryStatus {
+  PENDING
+  SIGNED
+  DECLINED
+}
+
+model Contract {
+  id                String         @id @default(uuid())
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contractNumber    String
+  title             String
+  type              String         // MSA | NDA | SOW | PURCHASE_AGREEMENT | SLA | OTHER
+  status            ContractStatus @default(DRAFT)
+  supplierId        String?
+  supplier          Supplier?      @relation(fields: [supplierId], references: [id])
+  ownerId           String
+  owner             User           @relation("ContractOwner", fields: [ownerId], references: [id])
+  description       String?
+  value             Decimal?       @db.Decimal(14, 2)
+  currency          String         @default("INR")
+  startDate         DateTime?
+  endDate           DateTime?
+  autoRenew         Boolean        @default(false)
+  noticeDays        Int            @default(60)
+  currentVersion    Int            @default(1)
+  approvedById      String?
+  approvedAt        DateTime?
+  publishedAt       DateTime?
+  terminatedAt      DateTime?
+  terminationReason String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  versions          ContractVersion[]
+  comments          ContractComment[]
+  signatories       ContractSignatory[]
+
+  @@unique([organizationId, contractNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, endDate])
+}
+
+// Every edit is a new immutable version, so negotiation history and exactly
+// what each party signed can always be reproduced.
+model ContractVersion {
+  id            String   @id @default(uuid())
+  contractId    String
+  contract      Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  body          String   @db.Text
+  changeNote    String?
+  source        String   // HUMAN | AGENT | SUPPLIER
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+
+  @@unique([contractId, versionNumber])
+}
+
+model ContractComment {
+  id            String   @id @default(uuid())
+  contractId    String
+  contract      Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  authorType    String   // BUYER | SUPPLIER | AGENT
+  authorName    String
+  body          String   @db.Text
+  internal      Boolean  @default(false) // internal notes are never shown to the supplier
+  versionNumber Int?
+  createdAt     DateTime @default(now())
+
+  @@index([contractId, createdAt])
+}
+
+// One person who must sign. They get an unguessable link — only its SHA-256
+// hash is stored — so external parties never need an account.
+model ContractSignatory {
+  id             String                  @id @default(uuid())
+  contractId     String
+  contract       Contract                @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  party          String                  // BUYER | SUPPLIER
+  name           String
+  email          String
+  title          String?
+  status         ContractSignatoryStatus @default(PENDING)
+  tokenHash      String                  @unique
+  signedName     String?
+  signedAt       DateTime?
+  signedIp       String?
+  signedUserAgent String?
+  signedVersion  Int?
+  signedDocHash  String?                 // SHA-256 of the exact text that was signed
+  declineReason  String?
+  invitedAt      DateTime?
+  createdAt      DateTime                @default(now())
+
+  @@index([contractId])
+}
+
+// The negotiation playbook: standard wording, approved fallbacks and guidance
+// the negotiation agent measures a counterparty's draft against.
+model ContractClause {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  title          String
+  category       String       // e.g. Payment, Liability, Termination, Confidentiality
+  body           String       @db.Text
+  fallbackBody   String?      @db.Text
+  required       Boolean      @default(false)
+  guidance       String?      @db.Text
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, category])
 }

@@ -125,7 +125,20 @@ export default function AgentsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-xs text-gray-400">{titleOf(a.agentKey)} · {new Date(a.createdAt).toLocaleString()}</p>
-                    {typeof a.input.subject === "string" ? (
+                    {a.tool === "propose_revision" ? (
+                      <>
+                        <p className="text-sm font-medium text-gray-900 mt-1">Proposed contract revision: {String(a.input.changeNote ?? "")}</p>
+                        <a href={`/dashboard/contracts/${String(a.input.contractId)}`} className="text-xs text-[#1A2A52] underline">Open the contract</a>
+                        <details className="mt-2"><summary className="text-xs text-gray-500 cursor-pointer">Show the proposed text</summary>
+                          <pre className="text-xs text-gray-600 mt-2 whitespace-pre-wrap max-h-72 overflow-auto bg-gray-50 rounded-lg p-3">{String(a.input.body ?? "")}</pre></details>
+                      </>
+                    ) : a.tool === "add_comment" || a.tool === "flag_contract_renewal" ? (
+                      <>
+                        <p className="text-sm font-medium text-gray-900 mt-1">{a.tool === "flag_contract_renewal" ? "Renewal alert" : a.input.internal ? "Internal contract note" : "Comment shown to the supplier"}</p>
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{String(a.input.body ?? a.input.message ?? "")}</p>
+                        <a href={`/dashboard/contracts/${String(a.input.contractId)}`} className="text-xs text-[#1A2A52] underline">Open the contract</a>
+                      </>
+                    ) : typeof a.input.subject === "string" ? (
                       <>
                         <p className="text-sm font-medium text-gray-900 mt-1">{a.input.subject}</p>
                         <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{String(a.input.body ?? "")}</p>
@@ -139,7 +152,7 @@ export default function AgentsPage() {
                     <button disabled={deciding === a.id} onClick={() => decide(a.id, "reject")}
                       className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"><X className="size-3.5" />Reject</button>
                     <button disabled={deciding === a.id} onClick={() => decide(a.id, "approve")}
-                      className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-[#1A2A52] text-white hover:bg-[#14203f] disabled:opacity-50"><Check className="size-3.5" />Approve &amp; send</button>
+                      className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-[#1A2A52] text-white hover:bg-[#14203f] disabled:opacity-50"><Check className="size-3.5" />Approve</button>
                   </div>
                 </div>
               </div>

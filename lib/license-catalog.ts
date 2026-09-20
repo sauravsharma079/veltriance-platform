@@ -7,7 +7,7 @@ export const MODULE_CATALOG: Record<LicenseModuleKey, { label: string; descripti
   INTAKE_TO_PO:  { label: "Intake to Purchase Order", description: "Requisitions, approvals, catalogs and purchase orders", available: true },
   SUPPLIER_RISK: { label: "Supplier Onboarding & Risk", description: "Onboarding, documents, risk assessment and monitoring", available: true },
   SOURCING:      { label: "Sourcing", description: "RFx events, bidding and award", available: false },
-  CONTRACTS:     { label: "Contracts", description: "Negotiation, e-signature and published contract repository", available: false },
+  CONTRACTS:     { label: "Contracts", description: "Negotiation, e-signature and published contract repository", available: true },
   AGENTS:        { label: "Autonomous Agents", description: "Agents that run workflows with minimal human touch", available: true },
 };
 

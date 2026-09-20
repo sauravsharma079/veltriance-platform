@@ -112,7 +112,7 @@ async function groqExtract(text: string, categories: string[], apiKey: string): 
 // Google Gemini — free tier via AI Studio, no credit card.
 // Get a key at https://aistudio.google.com/apikey
 async function geminiExtract(text: string, categories: string[], apiKey: string): Promise<ExtractedRequirement | null> {
-  const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
       method: "POST",

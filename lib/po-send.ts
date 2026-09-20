@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/audit";
+import { sendEmail } from "@/lib/email";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -25,7 +26,7 @@ export async function sendPurchaseOrder(opts: {
   actorId?: string;
   isChangeOrder?: boolean;
 }): Promise<SendResult> {
-  const { poId, organizationId, supabase, isChangeOrder } = opts;
+  const { poId, organizationId, isChangeOrder } = opts;
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: poId },
@@ -74,12 +75,15 @@ ${actorName}
 ${po.organization.name}
     `.trim();
 
-    // Using Supabase's auth email as a free SMTP proxy for now.
-    // TODO: replace with Resend/SendGrid for branded templates.
-    await supabase.auth.admin.inviteUserByEmail(toEmail, {
-      data: { poEmailBody: emailBody, poNumber: po.poNumber },
-      redirectTo: undefined,
+    // Previously this called supabase.auth.admin.inviteUserByEmail, which sends
+    // an account-invite email (not the PO) and isn't permitted for a normal
+    // session — so the supplier never received the order while the UI said it had.
+    const sent = await sendEmail({
+      to: toEmail,
+      subject: `${isChangeOrder ? "Change order" : "Purchase order"} ${po.poNumber} from ${po.organization.name}`,
+      text: emailBody,
     });
+    if (sent.sent === false) return { error: `Could not email the supplier: ${sent.reason}`, status: 502 };
 
     result = { method: "EMAIL", detail: `${isChangeOrder ? "Change order" : "PO"} emailed to ${toEmail}` };
   }

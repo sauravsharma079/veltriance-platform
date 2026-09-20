@@ -6,6 +6,7 @@ import { runAgent } from "@/lib/agents/runtime";
 import { llmConfigured } from "@/lib/agents/llm";
 import { hasModule } from "@/lib/licensing";
 import { errorMessage } from "@/lib/errors";
+import { expireContracts } from "@/lib/contracts";
 
 export const maxDuration = 300;
 
@@ -20,7 +21,9 @@ export async function GET(req: NextRequest) {
   const given = Buffer.from((req.headers.get("authorization") ?? "").replace(/^Bearer /, ""));
   if (!secret || given.length !== Buffer.byteLength(secret) || !timingSafeEqual(given, Buffer.from(secret)))
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!llmConfigured()) return NextResponse.json({ error: "No LLM configured" }, { status: 503 });
+  // Deterministic housekeeping first — needs no model, so it runs even if the LLM is down.
+  const expired = await expireContracts();
+  if (!llmConfigured()) return NextResponse.json({ error: "No LLM configured", expiredContracts: expired }, { status: 503 });
 
   const orgs = await prisma.organization.findMany({
     where: { licensedModules: { has: "AGENTS" } },
@@ -41,5 +44,5 @@ export async function GET(req: NextRequest) {
       }
     }
   }
-  return NextResponse.json({ ran: results.length, results });
+  return NextResponse.json({ ran: results.length, expiredContracts: expired, results });
 }
