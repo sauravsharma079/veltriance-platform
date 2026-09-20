@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "AUD", "CAD", "SGD", "AED"];
 
@@ -9,6 +10,12 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // People who arrive from an invitation email have no password yet, so they must choose one
+  // here — otherwise they'd be locked out as soon as this first session ends.
+  const [invited, setInvited] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  useEffect(() => { setInvited(new URLSearchParams(window.location.search).get("invited") === "1"); }, []);
   const [form, setForm] = useState({
     employeeId: "",
     department: "",
@@ -24,8 +31,16 @@ export default function OnboardingPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (invited) {
+      if (password.length < 8) { setError("Choose a password of at least 8 characters."); return; }
+      if (password !== confirm) { setError("The two passwords don't match."); return; }
+    }
+    setLoading(true);
+    if (invited) {
+      const { error: pwError } = await createClient().auth.updateUser({ password });
+      if (pwError) { setLoading(false); setError(pwError.message); return; }
+    }
     const res = await fetch("/api/user/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -111,6 +126,13 @@ export default function OnboardingPage() {
               ))}
             </select>
           </Field>
+
+          {invited && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Choose a password"><input required type="password" minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className="input" placeholder="At least 8 characters" /></Field>
+              <Field label="Confirm password"><input required type="password" minLength={8} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="input" /></Field>
+            </div>
+          )}
 
           {error && <p className="text-xs text-red-600">{error}</p>}
 

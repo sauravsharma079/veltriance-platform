@@ -3,57 +3,38 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 
 /**
- * This route is hit when an invited user clicks the link in their email.
- * Supabase adds the auth code to the URL; we exchange it for a session,
- * then link the Supabase auth identity to the pre-created User stub that
- * the admin created when they sent the invite.
+ * Hit when an invited user clicks the link in their email (see lib/user-invite.ts).
+ * The link carries a one-time token hash; we verify it server-side, which signs the
+ * user in, then link that sign-in to the User stub the admin created.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
+  const tokenHash = searchParams.get("token_hash");
+  const type = searchParams.get("type") === "magiclink" ? "magiclink" : "invite";
+  const code = searchParams.get("code"); // older links, from Supabase's own invite email
   const token = searchParams.get("token");
 
-  if (!code) {
-    return NextResponse.redirect(`${origin}/login?error=invite_invalid`);
-  }
+  if (!tokenHash && !code) return NextResponse.redirect(`${origin}/login?error=invite_invalid`);
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = tokenHash
+    ? await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
+    : await supabase.auth.exchangeCodeForSession(code!);
+  if (error || !data.user) return NextResponse.redirect(`${origin}/login?error=invite_expired`);
 
-  if (error || !data.user) {
-    return NextResponse.redirect(`${origin}/login?error=invite_expired`);
-  }
-
-  // If we have an invite token, link the Supabase auth identity to the stub
   if (token) {
     const stub = await prisma.user.findUnique({ where: { inviteToken: token } });
-
-    if (stub && !stub.authId) {
-      await prisma.user.update({
-        where: { id: stub.id },
-        data: {
-          authId: data.user.id,
-          inviteToken: null, // consume the token
-          onboardingComplete: false,
-        },
-      });
-
-      // Redirect to the org's subdomain for onboarding
-      const org = await prisma.organization.findUnique({
-        where: { id: stub.organizationId },
-      });
-
-      if (org) {
-        const baseHost = origin.replace(/^https?:\/\//, "").replace(/:\d+$/, "");
-        const protocol = origin.startsWith("https") ? "https" : "http";
-        const port = origin.match(/:(\d+)$/)?.[0] ?? "";
-        return NextResponse.redirect(
-          `${protocol}://${org.slug}.${baseHost}${port}/onboarding`
-        );
-      }
+    // The person who verified the link must be the person who was invited.
+    if (stub && stub.email.toLowerCase() !== (data.user.email ?? "").toLowerCase()) {
+      await supabase.auth.signOut();
+      return NextResponse.redirect(`${origin}/login?error=invite_invalid`);
+    }
+    if (stub && (!stub.authId || stub.authId.startsWith("pending_"))) {
+      await prisma.user.update({ where: { id: stub.id }, data: { authId: data.user.id, inviteToken: null, inviteStatus: "ACTIVE", onboardingComplete: false } });
+      // Same host: the session cookie was just set here, so this is where they stay signed in.
+      // ?invited=1 makes onboarding ask them to choose a password, which invited users don't have yet.
+      return NextResponse.redirect(`${origin}/onboarding?invited=1`);
     }
   }
-
-  // Fallback: if no token or stub not found, send them to the dashboard
   return NextResponse.redirect(`${origin}/dashboard`);
 }

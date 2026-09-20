@@ -2,7 +2,7 @@
 import CsvUploadModal from "@/components/CsvUploadModal";
 import { AdminAgent } from "@/components/AdminAgent";
 import { useState, useEffect, useCallback } from "react";
-import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers, Clock } from "lucide-react";
+import { Users, Shield, BookOpen, CheckSquare, Sliders, List, BarChart2, Code2, ChevronRight, ChevronDown, X, Check, AlertCircle, Plus, Trash2, Edit2, RefreshCw, Upload, Package, Zap, Sparkles, Layers, Clock, Mail } from "lucide-react";
 import { ActivityLog } from "@/components/ActivityLog";
 import { STANDARD_UNITS, mergeUnits } from "@/lib/units";
 import { errorMessage } from "@/lib/errors";
@@ -266,6 +266,18 @@ export default function AdminPage() {
     setSaving(false);
   }
 
+  // Tell the admin what really happened with the invitation — and hand them the link if email didn't go.
+  function reportInvite(invite: { emailed: boolean; link: string; emailNote?: string } | null | undefined, inviteError?: string | null) {
+    if (inviteError) alert(`The user was created, but the invitation could not be prepared: ${inviteError}\n\nUse \"Resend invite\" on their row once this is fixed.`);
+    else if (invite && !invite.emailed) window.prompt(`The user was created, but the invitation email could not be sent (${invite.emailNote ?? "unknown reason"}).\n\nCopy this link and send it to them yourself:`, invite.link);
+    else if (invite) alert("Invitation emailed.");
+  }
+  async function resendInvite(id: string) {
+    const r = await fetch(`/api/admin/users/${id}/invite`, { method: "POST" });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) { alert(d?.error ?? "Could not send the invitation"); return; }
+    reportInvite(d.invite, null);
+  }
   async function createUser() {
     if (!userForm.email || !userForm.name) { setError("Name and email required"); return; }
     setSaving(true); setError("");
@@ -274,6 +286,7 @@ export default function AdminPage() {
       const d = await r.json();
       if (!r.ok) throw new Error(typeof d.error === "string" ? d.error : JSON.stringify(d.error) || "Failed");
       const newId = d.user.id;
+      reportInvite(d.invite, d.inviteError);
       for (const gid of userForm.contentGroupIds) await fetch(`/api/admin/users/${newId}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ addContentGroupId: gid }) });
       for (const rid of userForm.workspaceRoleIds) await fetch(`/api/admin/users/${newId}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ addWorkspaceRoleId: rid }) });
       await loadAll();
@@ -418,6 +431,7 @@ export default function AdminPage() {
                     <div className="col-span-2"><p className="text-xs text-gray-500">{u.department||"—"}</p></div>
                     <div className="col-span-1"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${u.inviteStatus==="ACTIVE"?"bg-emerald-50 text-emerald-700":u.inviteStatus==="PENDING"?"bg-amber-50 text-amber-700":"bg-gray-100 text-gray-500"}`}>{u.inviteStatus}</span></div>
                     <div className="col-span-1 flex items-center gap-1 justify-end">
+                      {u.inviteStatus==="PENDING"&&<button onClick={()=>resendInvite(u.id)} title="Resend invitation email" className="p-1.5 text-gray-400 hover:text-[#1A2A52] rounded-lg hover:bg-gray-100"><Mail className="size-3"/></button>}
                       <button onClick={()=>{ setEditItem({...u}); setModal("editUser"); }} className="p-1.5 text-gray-400 hover:text-[#1A2A52] rounded-lg hover:bg-gray-100"><Edit2 className="size-3"/></button>
                       <button onClick={()=>{ if(confirm("Delete this user?")) apiCall(`/api/admin/users/${u.id}`,"DELETE"); }} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50"><Trash2 className="size-3"/></button>
                     </div>

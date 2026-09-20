@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { seatGuard } from "@/lib/licensing";
 import { getCurrentOrganization } from "@/lib/tenant";
-import { randomBytes } from "crypto";
+import { errorMessage } from "@/lib/errors";
+import { sendUserInvite } from "@/lib/user-invite";
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -14,6 +14,7 @@ const inviteSchema = z.object({
   department: z.string().optional(),
 });
 
+/** Creates a user stub and invites them in one step (ADMIN only). */
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -29,59 +30,19 @@ export async function POST(req: NextRequest) {
   const seatBlocked = await seatGuard(organization.id);
   if (seatBlocked) return seatBlocked;
 
-  const body = await req.json();
-  const parsed = inviteSchema.safeParse(body);
+  const parsed = inviteSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
-
   const { email, name, role, department } = parsed.data;
 
-  // Check if a user with this email already exists in the org
-  const existing = await prisma.user.findFirst({
-    where: { organizationId: organization.id, email },
-  });
+  const existing = await prisma.user.findFirst({ where: { organizationId: organization.id, email } });
   if (existing) return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
 
-  // Generate a secure invite token
-  const inviteToken = randomBytes(32).toString("hex");
-
-  // Create the user stub — authId is null until they accept the invite
-  const invited = await prisma.user.create({
-    data: {
-      organizationId: organization.id,
-      email,
-      name,
-      role,
-      department,
-      invitedAt: new Date(),
-      inviteToken,
-    },
-  });
-
-  // Use service role key for admin auth operations — the regular anon client
-  // doesn't have permission to send invites via supabase.auth.admin
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
-  const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-    data: {
-      name,
-      organizationSlug: organization.slug,
-      organizationName: organization.name,
-      inviteToken,
-    },
-    redirectTo: `${req.nextUrl.origin}/auth/accept-invite?token=${inviteToken}`,
-  });
-
-  if (inviteError) {
-    // Roll back the user stub if the email failed
-    await prisma.user.delete({ where: { id: invited.id } });
-    return NextResponse.json({ error: `Failed to send invite email: ${inviteError.message}` }, { status: 500 });
+  const invited = await prisma.user.create({ data: { organizationId: organization.id, email, name, role, department, invitedAt: new Date(), inviteStatus: "PENDING" } });
+  try {
+    const invite = await sendUserInvite({ user: invited, organization, origin: req.nextUrl.origin, invitedBy: admin.name });
+    return NextResponse.json({ user: { id: invited.id, email, name, role }, invite, message: invite.emailed ? `Invite emailed to ${email}` : `User created, but the email could not be sent` }, { status: 201 });
+  } catch (e) {
+    // The user is kept: the admin can retry with "Resend invite" once the cause is fixed.
+    return NextResponse.json({ user: { id: invited.id, email, name, role }, inviteError: errorMessage(e) }, { status: 201 });
   }
-
-  return NextResponse.json({
-    user: { id: invited.id, email, name, role },
-    message: `Invite sent to ${email}`,
-  }, { status: 201 });
 }

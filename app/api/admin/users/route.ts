@@ -6,6 +6,7 @@ import { getCurrentOrganization } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 import { errorMessage } from "@/lib/errors";
+import { sendUserInvite, type InviteOutcome } from "@/lib/user-invite";
 
 async function getCtx() {
   const sb = await createClient();
@@ -90,7 +91,18 @@ export async function POST(req: NextRequest) {
       details: { role: user.role },
     });
 
-    return NextResponse.json({ user }, { status: 201 });
+    // Creating a user is not the same as inviting them. The bot and the form both ask for
+    // an invite (sendInvite defaults to true) but this route used to ignore it entirely, so
+    // nobody was ever emailed while the UI said "invite sent".
+    let invite: InviteOutcome | null = null;
+    let inviteError: string | null = null;
+    if (body.sendInvite !== false) {
+      try {
+        const org = await prisma.organization.findUniqueOrThrow({ where: { id: admin.organizationId }, select: { slug: true, name: true } });
+        invite = await sendUserInvite({ user, organization: org, origin: req.nextUrl.origin, invitedBy: admin.profile.name });
+      } catch (e) { inviteError = errorMessage(e); }
+    }
+    return NextResponse.json({ user, invite, inviteError }, { status: 201 });
   } catch (e) {
     if (e?.code === "P2002") return NextResponse.json({ error: "A user with this employee ID already exists" }, { status: 409 });
     return NextResponse.json({ error: errorMessage(e) }, { status: 500 });

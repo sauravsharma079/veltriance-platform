@@ -344,7 +344,7 @@ async function addLookupValues(typeName: string, raw: string): Promise<{ ok: boo
 // Create dispatchers
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function createUser(data: Record<string,string>, sendInvite: boolean): Promise<{ ok: boolean; error?: string }> {
+async function createUser(data: Record<string,string>, sendInvite: boolean): Promise<{ ok: boolean; error?: string; invite?: { emailed: boolean; link: string; emailNote?: string } | null; inviteError?: string | null }> {
   const [rolesRes, groupsRes, coasRes, usersRes] = await Promise.all([
     fetch("/api/admin/roles").then(r => r.json()),
     fetch("/api/admin/content-groups").then(r => r.json()),
@@ -368,7 +368,7 @@ async function createUser(data: Record<string,string>, sendInvite: boolean): Pro
     workspaceRoleIds, contentGroupIds, chartOfAccountIds, sendInvite,
   }) });
   const d = await res.json();
-  return res.ok ? { ok: true } : { ok: false, error: errStr(d) };
+  return res.ok ? { ok: true, invite: d.invite ?? null, inviteError: d.inviteError ?? null } : { ok: false, error: errStr(d) };
 }
 
 async function createRole(data: Record<string,string>, permText: string): Promise<{ ok: boolean; error?: string }> {
@@ -780,7 +780,13 @@ export function AdminAgent({ onRefresh, openSignal }: { onRefresh: () => void; o
           addMsg([{ role: "loading", text: `Creating user **${data.name}**…` }]);
           const result = await createUser(data, sendInvite);
           setMessages(p => p.filter(m => m.role !== "loading"));
-          if (result.ok) { addMsg([{ role: "success", text: `✓ **${data.name}** created${sendInvite ? " — invite sent!" : "."}` }]); onRefresh(); resetToIdle(); }
+          if (result.ok) {
+            const note = !sendInvite ? "."
+              : result.inviteError ? ` — but the invitation could not be prepared (${result.inviteError}). Use Resend invite on their row.`
+              : result.invite?.emailed ? " — invitation emailed."
+              : ` — but the invitation email could not be sent (${result.invite?.emailNote ?? "unknown reason"}). Send them this link yourself: ${result.invite?.link ?? ""}`;
+            addMsg([{ role: result.inviteError || (sendInvite && !result.invite?.emailed) ? "error" : "success", text: `${result.inviteError || (sendInvite && !result.invite?.emailed) ? "" : "✓ "}**${data.name}** created${note}` }]); onRefresh(); resetToIdle();
+          }
           else { addMsg([{ role: "error", text: result.error ?? "Failed." }]); resetToIdle(); }
         }
       }
