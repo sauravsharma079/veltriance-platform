@@ -13,7 +13,7 @@ export function rateLimit(key: string, limit: number, windowMs: number, now = Da
 
 /** Limits per route group. Public endpoints are token-gated but unauthenticated, so they get the tightest caps. */
 export function limitFor(pathname: string, method: string): { name: string; limit: number; windowMs: number } | null {
-  if (pathname.startsWith("/api/auth/")) return { name: "auth", limit: 10, windowMs: 60_000 };
+  if (pathname.startsWith("/api/auth/") || pathname === "/api/supplier/login") return { name: "auth", limit: 10, windowMs: 60_000 };
   if (pathname.startsWith("/api/public/")) return { name: method === "GET" ? "public-read" : "public-write", limit: method === "GET" ? 60 : 20, windowMs: 60_000 };
   return null;
 }

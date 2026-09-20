@@ -75,7 +75,7 @@ export type CreateInvoiceInput = {
   organizationId: string; actor: { id: string; name: string };
   supplierId?: string; purchaseOrderId?: string | null;
   invoiceNumber: string; invoiceDate: Date; dueDate?: Date | null; currency?: string;
-  subtotal: number; taxAmount: number; totalAmount: number; notes?: string | null;
+  subtotal: number; taxAmount: number; totalAmount: number; notes?: string | null; source?: "STAFF" | "SUPPLIER";
   lines: { poLineId?: string | null; description: string; quantity: number; unitPrice: number; lineTotal: number }[];
 };
 
@@ -99,7 +99,7 @@ export async function createInvoice(i: CreateInvoiceInput): Promise<Result> {
         data: {
           organizationId: i.organizationId, internalNumber: await nextInvoiceNumber(i.organizationId), invoiceNumber: i.invoiceNumber.trim(),
           supplierId, purchaseOrderId: po?.id ?? null, invoiceDate: i.invoiceDate, dueDate: i.dueDate ?? null, currency: (i.currency ?? po?.currency ?? "INR").toUpperCase(),
-          subtotal: i.subtotal, taxAmount: i.taxAmount, totalAmount: i.totalAmount, notes: i.notes ?? null, createdById: i.actor.id,
+          subtotal: i.subtotal, taxAmount: i.taxAmount, totalAmount: i.totalAmount, notes: i.notes ?? null, createdById: i.actor.id, source: i.source ?? "STAFF",
           lines: { create: i.lines.map(l => ({ poLineId: l.poLineId ?? null, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, lineTotal: l.lineTotal })) },
         },
       });
@@ -156,7 +156,8 @@ export async function decideInvoice(opts: {
       if (opts.actor.role !== "ADMIN") return { status: 403, json: { error: "Only an Admin can approve an invoice that failed its match" } };
       if ((opts.reason ?? "").trim().length < 10) return { status: 422, json: { error: "Explain why you're approving despite the exceptions (at least a sentence) — it goes in the audit trail" } };
     }
-    const v = await invoiceApprovalVerdict({ organizationId: opts.organizationId, creatorId: inv.createdById, approver: opts.actor });
+    // A supplier-submitted invoice has no staff author, so nobody is barred from approving it as "their own".
+    const v = await invoiceApprovalVerdict({ organizationId: opts.organizationId, creatorId: inv.source === "SUPPLIER" ? "" : inv.createdById, approver: opts.actor });
     if (v.allowed === false) return { status: 403, json: { error: v.reason } };
     const done = await prisma.invoice.updateMany({ where: { id: inv.id, status: inv.status }, data: { status: "APPROVED", approvedById: opts.actor.id, approvedAt: new Date(), approvalNote: opts.reason?.trim() ?? null, overridden: overriding } });
     if (done.count === 0) return { status: 409, json: { error: "This invoice was just changed by someone else — reload and try again" } };

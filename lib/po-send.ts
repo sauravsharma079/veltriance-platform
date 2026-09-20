@@ -1,3 +1,4 @@
+import { publicBaseUrl } from "@/lib/contracts";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/audit";
@@ -75,7 +76,8 @@ Line Items:
 ${linesSummary}
 
 ${po.notes ? `Notes: ${po.notes}\n` : ""}
-Please acknowledge receipt of this ${isChangeOrder ? "change order" : "PO"} by replying to this email.
+Please confirm this ${isChangeOrder ? "change order" : "PO"} and send your invoice in the supplier portal (sign in with this email address, no password needed):
+${publicBaseUrl()}/supplier
 
 Regards,
 ${actorName}

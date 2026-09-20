@@ -1430,6 +1430,7 @@ model Invoice {
   approvedAt       DateTime?
   approvalNote     String?
   overridden       Boolean       @default(false) // approved despite a failed match
+  source           String        @default("STAFF") // STAFF, or SUPPLIER when the vendor submitted it in their portal
   rejectionReason  String?
   paidAt           DateTime?
   paymentReference String?
