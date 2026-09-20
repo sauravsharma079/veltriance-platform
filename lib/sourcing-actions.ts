@@ -153,7 +153,7 @@ export async function createPoFromAward(opts: Actor & { id: string }): Promise<R
   if (!winner?.bid) return { status: 422, json: { error: "The winning bid is missing" } };
   // No PO to a vendor who hasn't been through onboarding. A vendor not yet on file is registered now,
   // so they appear in the onboarding queue, and the PO waits until they're Active.
-  let poSupplier = winner.supplier;
+  const poSupplier = winner.supplier;
   if (!winner.supplierId || !poSupplier) {
     const v = await registerNewVendor({ organizationId: org.id, actor: profile, name: winner.name, email: winner.email, contactName: winner.contactName, category: event.category, source: `Sourcing ${event.eventNumber} (awarded)` });
     await prisma.sourcingInvite.update({ where: { id: winner.id }, data: { supplierId: v.supplier.id } });
