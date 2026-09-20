@@ -37,6 +37,10 @@ model Organization {
   matchQtyTolerancePct   Float   @default(0)   // ...and the quantity may exceed what was received by this much
   invoiceAutoApprove     Boolean @default(true) // a clean match is approved without a person
 
+  // Approval SLAs: nudge the approver after this many hours, escalate after this many.
+  approvalReminderHours   Int @default(48)
+  approvalEscalationHours Int @default(96)
+
   users           User[]
   suppliers       Supplier[]
   requisitions    Requisition[]
@@ -132,6 +136,10 @@ model User {
   ownedSourcing   SourcingEvent[] @relation("SourcingOwner")
   goodsReceipts   GoodsReceipt[] @relation("GoodsReceiptBy")
   invoicesCreated Invoice[]      @relation("InvoiceCreatedBy")
+
+  // Out of office: while set, approvals addressed to this person also go to (and may be decided by) the delegate.
+  delegateId       String?
+  outOfOfficeUntil DateTime?
 }
 
 // ───────────────────────────── Suppliers ────────────────────────────────────
@@ -492,6 +500,8 @@ model ApprovalStep {
   comment       String?
   decidedAt     DateTime?
   createdAt     DateTime           @default(now())
+  remindedAt    DateTime?          // a reminder went to the approver(s) for this step
+  escalatedAt   DateTime?          // it sat too long and was escalated
 
   @@index([requisitionId])
   @@index([approverId, status])

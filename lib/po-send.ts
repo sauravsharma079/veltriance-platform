@@ -20,7 +20,7 @@ export type SendResult =
 export async function sendPurchaseOrder(opts: {
   poId: string;
   organizationId: string;
-  supabase: SupabaseClient;
+  supabase?: SupabaseClient; // no longer used; kept so existing callers still compile
   method?: "EMAIL" | "CXML" | "MANUAL";
   supplierEmailOverride?: string;
   actorName?: string;

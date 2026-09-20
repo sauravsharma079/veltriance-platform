@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { moduleGuard } from "@/lib/licensing";
 import { logAudit } from "@/lib/audit";
+import { notifyCurrentApprovers } from "@/lib/approval-notify";
+import { createPurchaseOrder } from "@/lib/requisition-approval";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { errorMessage } from "@/lib/errors";
@@ -16,7 +18,7 @@ import { errorMessage } from "@/lib/errors";
  * cart, which lands in DRAFT deliberately so the requestor can review
  * supplier-returned line items before they enter approval).
  */
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
     const supabase = await createClient();
@@ -73,6 +75,10 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       action: "SUBMITTED", entity: "REQUISITION", entityId: id, entityLabel: requisition.requisitionNumber,
       details: { status: updated.status },
     });
+
+    // Tell the approvers straight away — or, if a rule approved it outright, raise the PO now.
+    if (approvalSteps.length > 0) await notifyCurrentApprovers({ requisitionId: id, origin: req.nextUrl.origin }).catch(e => console.error("[submit] approver notification failed:", e));
+    else await createPurchaseOrder(id, organization.id, { id: profile.id, name: profile.name, role: profile.role }).catch(e => console.error("[submit] auto-approved PO creation failed:", e));
 
     return NextResponse.json({ requisition: updated });
   } catch (e) {

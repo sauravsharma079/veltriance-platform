@@ -1,3 +1,5 @@
+> **Superseded.** See [docs/PLATFORM_GAP_ANALYSIS.md](docs/PLATFORM_GAP_ANALYSIS.md) for the current, code-verified gap analysis and build order. This older report predates the sourcing, contracts, onboarding, invoicing and agent work.
+
 # Veltriance Platform — Enterprise Readiness Report
 
 > **Purpose:** A gap analysis of what needs to be built, hardened, and certified before Veltriance can be sold to enterprise customers (500+ employees, regulated industries, large procurement volumes).

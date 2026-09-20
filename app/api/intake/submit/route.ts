@@ -7,6 +7,8 @@ import { moduleGuard } from "@/lib/licensing";
 import { generateRequisitionNumber } from "@/lib/requisition-number";
 import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { logAudit } from "@/lib/audit";
+import { notifyCurrentApprovers } from "@/lib/approval-notify";
+import { createPurchaseOrder } from "@/lib/requisition-approval";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { parseRequiredDate } from "@/lib/date-phrase";
 
@@ -233,6 +235,9 @@ export async function POST(req: NextRequest) {
       action: "SUBMITTED", entity: "REQUISITION", entityId: requisition.id, entityLabel: requisition.requisitionNumber,
       details: { source: d.intakeSource, totalAmount, status: requisition.status },
     });
+
+    if (approvalSteps.length > 0) await notifyCurrentApprovers({ requisitionId: requisition.id, origin: req.nextUrl.origin }).catch(e => console.error("[intake] approver notification failed:", e));
+    else await createPurchaseOrder(requisition.id, organization.id, { id: profile.id, name: profile.name, role: profile.role }).catch(e => console.error("[intake] auto-approved PO creation failed:", e));
 
     return NextResponse.json({
       requisition,

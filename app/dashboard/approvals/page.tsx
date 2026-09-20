@@ -3,19 +3,24 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { ApprovalStepType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { activeDelegators } from "@/lib/approval-delegation";
 import { CheckSquare } from "lucide-react";
+import { OutOfOfficeCard } from "@/components/OutOfOfficeCard";
 
 export default async function ApprovalsPage() {
   const result = await getCurrentUser();
   if (!result || !result.profile) redirect("/login");
   const { profile, organization } = result;
 
+  // Approvals addressed to a colleague who is out of office and named me count as mine too.
+  const covering = await activeDelegators(profile!.id);
   const pendingSteps = await prisma.approvalStep.findMany({
     where: {
       status: "PENDING",
       requisition: { organizationId: organization.id },
       OR: [
         { approverId: profile!.id },
+        ...(covering.length ? [{ approverId: { in: covering } }] : []),
         ...(profile!.role === "PROCUREMENT" ? [{ stepType: { in: ["DIRECTOR", "PROCUREMENT"] as ApprovalStepType[] } }] : []),
         ...(profile!.role === "ADMIN" ? [{ stepType: { in: ["DIRECTOR", "PROCUREMENT", "FINANCE"] as ApprovalStepType[] } }] : []),
       ],
@@ -30,6 +35,8 @@ export default async function ApprovalsPage() {
     <div className="p-8 max-w-4xl">
       <h1 className="text-xl font-semibold text-gray-900">My approvals</h1>
       <p className="text-sm text-gray-500 mt-1 mb-6">Requisitions waiting on your decision.</p>
+
+      <OutOfOfficeCard />
 
       {pendingSteps.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-xl px-5 py-10 text-center">

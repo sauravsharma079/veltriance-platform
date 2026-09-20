@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ApprovalStepType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasModule } from "@/lib/licensing";
+import { activeDelegators } from "@/lib/approval-delegation";
 import { getCurrentOrganization } from "@/lib/tenant";
 
 export async function GET() {
@@ -19,6 +20,7 @@ export async function GET() {
 
   const orgId = organization.id;
 
+  const covering = await activeDelegators(profile.id);
   const [pendingSteps, myRecentApprovals, statusChanges] = await Promise.all([
     // Approvals waiting on this user
     prisma.approvalStep.findMany({
@@ -27,6 +29,7 @@ export async function GET() {
         requisition: { organizationId: orgId },
         OR: [
           { approverId: profile.id },
+          ...(covering.length ? [{ approverId: { in: covering } }] : []),
           ...(profile.role === "ADMIN" ? [{}] : []),
           ...(profile.role === "PROCUREMENT" ? [{ stepType: { in: ["DIRECTOR","PROCUREMENT"] as ApprovalStepType[] } }] : []),
         ],
