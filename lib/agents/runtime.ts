@@ -44,6 +44,8 @@ export type AgentDef = {
   schedule: "daily" | null;          // picked up by the cron endpoint
   instructions: string;              // the agent's job and rules
   kickoff: (input?: Record<string, unknown>) => string;
+  /** For agents that act on something specific (e.g. a contract): where to start them from, since "Run now" can't. */
+  launch?: { label: string; href: string };
   /** Validates what a manual run may pass in (e.g. which contract). Omit if the agent takes none. */
   inputSchema?: z.ZodType<Record<string, unknown>>;
   tools: AgentTool[];

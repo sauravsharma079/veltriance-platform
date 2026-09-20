@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ key: strin
   if (def.inputSchema) {
     const body = await req.json().catch(() => null);
     const parsed = def.inputSchema.safeParse(body?.input ?? {});
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 422 });
+    if (!parsed.success) return NextResponse.json({ error: def.launch ? `${def.title} works on a specific item — ${def.launch.label.toLowerCase()}.` : (parsed.error.issues[0]?.message ?? "Invalid input") }, { status: 422 });
     input = parsed.data;
   }
   try {

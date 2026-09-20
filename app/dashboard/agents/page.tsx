@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bot, Play, Check, X, ChevronDown, ChevronRight, AlertCircle, Loader2 } from "lucide-react";
 
-type AgentInfo = { key: string; title: string; description: string; schedule: string | null; licensed: boolean; lastRun: { status: string; summary: string | null; startedAt: string } | null };
+type AgentInfo = { launch: { label: string; href: string } | null; key: string; title: string; description: string; schedule: string | null; licensed: boolean; lastRun: { status: string; summary: string | null; startedAt: string } | null };
 type Action = { id: string; agentKey: string; tool: string; input: Record<string, unknown>; rationale: string | null; status: string; createdAt: string; result?: unknown; error?: string | null };
 type Step = { thought: string; tool?: string; input?: unknown; result?: unknown; finished?: boolean };
 type Run = { id: string; agentKey: string; trigger: string; status: string; summary: string | null; error: string | null; steps: Step[] | null; llmCalls: number; startedAt: string };
@@ -173,11 +173,15 @@ export default function AgentsPage() {
                   <p className="text-xs text-gray-500 mt-1">{a.description}</p>
                   {a.schedule && <p className="text-[11px] text-gray-400 mt-2">Runs automatically {a.schedule}</p>}
                 </div>
-                <button disabled={!a.licensed || !llm.configured || running === a.key} onClick={() => runNow(a.key)}
-                  title={!a.licensed ? "Not included in your license" : undefined}
-                  className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-[#1A2A52] text-white hover:bg-[#14203f] disabled:opacity-40 shrink-0">
-                  {running === a.key ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}Run now
+                {a.launch ? (
+                  <a href={a.launch.href} className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 shrink-0">{a.launch.label} →</a>
+                ) : (
+                  <button disabled={!a.licensed || !llm.configured || running === a.key} onClick={() => runNow(a.key)}
+                    title={!a.licensed ? "Not included in your license" : undefined}
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-[#1A2A52] text-white hover:bg-[#14203f] disabled:opacity-40 shrink-0">
+                    {running === a.key ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}Run now
                 </button>
+                )}
               </div>
               {a.lastRun && <p className="text-[11px] text-gray-400 mt-3">Last run {new Date(a.lastRun.startedAt).toLocaleString()} — {a.lastRun.status.replace("_", " ").toLowerCase()}</p>}
             </div>

@@ -142,6 +142,7 @@ export const contractNegotiator: AgentDef = {
   maxSteps: 8,
   requireWriteBeforeFinish: true,
   timeBudgetMs: 150_000, // writing a whole contract takes a while, especially on free tiers
+  launch: { label: "Open a contract to use it", href: "/dashboard/contracts" },
   inputSchema: z.object({ contractId: z.string().min(1), instruction: z.string().max(1000).optional() }),
   instructions: `You help procurement teams draft and negotiate contracts. Work from the contract and the organisation's clause playbook.
 

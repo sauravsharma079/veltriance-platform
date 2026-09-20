@@ -17,7 +17,7 @@ export async function GET() {
     canConfigure: a.profile.role === "ADMIN",
     llm: { configured: llmConfigured(), provider: activeProvider() },
     agents: AGENTS.map(g => ({
-      key: g.key, title: g.title, description: g.description, schedule: g.schedule,
+      key: g.key, title: g.title, description: g.description, schedule: g.schedule, launch: g.launch ?? null,
       licensed: hasModule(a.org, g.module),
       lastRun: lastRuns.find(r => r.agentKey === g.key) ?? null,
     })),
