@@ -48,6 +48,7 @@ model Organization {
   punchoutSessions PunchoutSession[]
   agentRuns        AgentRun[]
   contracts        Contract[]
+  sourcingEvents   SourcingEvent[]
   contractClauses  ContractClause[]
   agentActions     AgentAction[]
 
@@ -119,6 +120,7 @@ model User {
   @@index([organizationId])
   @@unique([organizationId, employeeId])
   ownedContracts  Contract[]     @relation("ContractOwner")
+  ownedSourcing   SourcingEvent[] @relation("SourcingOwner")
 }
 
 // ───────────────────────────── Suppliers ────────────────────────────────────
@@ -217,6 +219,7 @@ model Supplier {
   @@index([assignedUserId])
   @@unique([organizationId, code])
   contracts       Contract[]
+  sourcingInvites SourcingInvite[]
 }
 
 model SupplierContact {
@@ -1183,4 +1186,132 @@ model ContractClause {
   updatedAt      DateTime     @updatedAt
 
   @@index([organizationId, category])
+}
+
+
+// ───────────────────────────── Sourcing (RFx) ───────────────────────────────
+
+enum SourcingStatus {
+  DRAFT
+  OPEN         // published; invited suppliers can bid until the deadline
+  EVALUATION   // bidding closed; buyer compares bids
+  AWARDED
+  CANCELLED
+}
+
+enum SourcingInviteStatus {
+  INVITED
+  VIEWED
+  SUBMITTED
+  DECLINED
+}
+
+model SourcingEvent {
+  id                String         @id @default(uuid())
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  eventNumber       String
+  title             String
+  type              String         @default("RFQ") // RFQ | RFP | RFI
+  description       String?        @db.Text
+  category          String?
+  currency          String         @default("INR")
+  status            SourcingStatus @default(DRAFT)
+  deadline          DateTime?
+  requiredDate      DateTime?
+  deliveryLocation  String?
+  terms             String?        @db.Text
+  // [{ id, text, required }] — extra questions suppliers answer alongside their prices.
+  questions         Json?
+  // The bid-evaluator agent's write-up: { summary, recommendedInviteId, notes: [{ inviteId, note }] }
+  evaluation        Json?
+  requisitionId     String?
+  ownerId           String
+  owner             User           @relation("SourcingOwner", fields: [ownerId], references: [id])
+  awardedInviteId   String?
+  awardedAt         DateTime?
+  awardReason       String?
+  awardedContractId String?
+  awardedPoId       String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  items             SourcingItem[]
+  invites           SourcingInvite[]
+
+  @@unique([organizationId, eventNumber])
+  @@index([organizationId, status])
+}
+
+model SourcingItem {
+  id            String        @id @default(uuid())
+  eventId       String
+  event         SourcingEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sequence      Int
+  description   String
+  quantity      Decimal       @db.Decimal(12, 2)
+  unit          String?
+  specification String?       @db.Text
+  // Internal benchmark. Never shown to suppliers.
+  targetPrice   Decimal?      @db.Decimal(12, 2)
+
+  bidLines      SourcingBidLine[]
+
+  @@index([eventId])
+}
+
+// One invited supplier. Also the credential: their personal bid link is a random
+// token whose SHA-256 hash is stored here, so they never need an account.
+model SourcingInvite {
+  id             String               @id @default(uuid())
+  eventId        String
+  event          SourcingEvent        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  supplierId     String?
+  supplier       Supplier?            @relation(fields: [supplierId], references: [id])
+  name           String
+  contactName    String?
+  email          String
+  tokenHash      String               @unique
+  status         SourcingInviteStatus @default(INVITED)
+  invitedAt      DateTime?
+  viewedAt       DateTime?
+  declineReason  String?
+  createdAt      DateTime             @default(now())
+
+  bid            SourcingBid?
+
+  @@index([eventId])
+}
+
+// A supplier's response. One live bid per invite; resubmitting before the
+// deadline replaces it and bumps `revision`.
+model SourcingBid {
+  id           String         @id @default(uuid())
+  inviteId     String         @unique
+  invite       SourcingInvite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  totalAmount  Decimal        @db.Decimal(14, 2)
+  currency     String
+  leadTimeDays Int?
+  paymentTerms String?
+  validityDays Int?
+  notes        String?        @db.Text
+  answers      Json?          // { [questionId]: answer }
+  revision     Int            @default(1)
+  submittedAt  DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  lines        SourcingBidLine[]
+}
+
+model SourcingBidLine {
+  id           String       @id @default(uuid())
+  bidId        String
+  bid          SourcingBid  @relation(fields: [bidId], references: [id], onDelete: Cascade)
+  itemId       String
+  item         SourcingItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  unitPrice    Decimal      @db.Decimal(12, 2)
+  leadTimeDays Int?
+  notes        String?
+
+  @@unique([bidId, itemId])
 }

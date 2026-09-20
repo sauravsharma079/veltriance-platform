@@ -9,11 +9,13 @@ export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get("status") ?? "PENDING";
   if (!["PENDING", "EXECUTED", "REJECTED", "FAILED"].includes(status)) return NextResponse.json({ error: "Invalid status" }, { status: 422 });
   const contractId = req.nextUrl.searchParams.get("contractId");
+  const eventId = req.nextUrl.searchParams.get("eventId");
   const actions = await prisma.agentAction.findMany({
     where: {
       organizationId: a.org.id, status: status as "PENDING",
       // Actions on a contract keep its id in their input; lets a contract page show its own proposals.
       ...(contractId && { input: { path: ["contractId"], equals: contractId } }),
+      ...(eventId && { input: { path: ["eventId"], equals: eventId } }),
     },
     orderBy: { createdAt: "desc" }, take: 50,
   });

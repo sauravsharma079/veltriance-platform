@@ -9,3 +9,8 @@ export const CONTRACT_TYPE_OPTIONS = [
   ["PURCHASE_AGREEMENT", "Purchase Agreement"], ["SLA", "Service Level Agreement"], ["OTHER", "Other"],
 ] as const;
 export const statusLabel = (s: string) => s.replace(/_/g, " ").toLowerCase();
+
+export const SOURCING_STATUS_STYLE: Record<string, string> = {
+  DRAFT: "bg-gray-100 text-gray-600", OPEN: "bg-blue-50 text-blue-700", EVALUATION: "bg-amber-50 text-amber-700",
+  AWARDED: "bg-emerald-50 text-emerald-700", CANCELLED: "bg-gray-100 text-gray-400",
+};

@@ -7,6 +7,7 @@ import { llmConfigured } from "@/lib/agents/llm";
 import { hasModule } from "@/lib/licensing";
 import { errorMessage } from "@/lib/errors";
 import { expireContracts } from "@/lib/contracts";
+import { closeOverdueEvents } from "@/lib/sourcing";
 
 export const maxDuration = 300;
 
@@ -23,6 +24,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Deterministic housekeeping first — needs no model, so it runs even if the LLM is down.
   const expired = await expireContracts();
+  const closedEvents = await closeOverdueEvents();
   if (!llmConfigured()) return NextResponse.json({ error: "No LLM configured", expiredContracts: expired }, { status: 503 });
 
   const orgs = await prisma.organization.findMany({
@@ -44,5 +46,5 @@ export async function GET(req: NextRequest) {
       }
     }
   }
-  return NextResponse.json({ ran: results.length, expiredContracts: expired, results });
+  return NextResponse.json({ ran: results.length, expiredContracts: expired, closedEvents, results });
 }
