@@ -60,6 +60,12 @@ export type AgentDef = {
   requireWriteBeforeFinish?: boolean;
   /** Overrides the default time budget for agents that generate long documents. */
   timeBudgetMs?: number;
+  /**
+   * For agents that work through a list: before accepting "finished", ask whether actionable work is
+   * left. Return a message naming it and the agent is sent back to do it (up to twice); null = done.
+   * Models tend to stop early and call the rest "needs a human" — this keeps them thorough.
+   */
+  remainingWork?: (ctx: AgentCtx) => Promise<string | null>;
 };
 
 type Step = { thought: string; tool?: string; input?: unknown; result?: unknown; finished?: boolean };
@@ -122,7 +128,7 @@ export async function runAgent(def: AgentDef, org: { id: string; agentAutonomy: 
   const ctx: AgentCtx = { organizationId: org.id, runId: run.id };
   const steps: Step[] = [];
   const seen = new Set<string>();
-  let llmCalls = 0, writes = 0, okWrites = 0, nudges = 0, summary = "";
+  let llmCalls = 0, writes = 0, okWrites = 0, nudges = 0, workNudges = 0, summary = "";
   const resultIdx: number[] = []; // positions of tool-result messages, to trim old ones
   const started = Date.now();
 
@@ -142,6 +148,15 @@ export async function runAgent(def: AgentDef, org: { id: string; agentAutonomy: 
         steps.push({ thought: step.thought, tool: "(finish refused)", result: { error: "nothing produced yet" } });
         messages.push({ role: "user", content: "You have not saved anything yet, so the job is not done. Use a write tool now (for a review: propose_revision with the COMPLETE revised text, then add_comment with your findings; if nothing needs changing, add_comment saying so). Do not finish until you have." });
         continue;
+      }
+      if (step.action.type === "finish" && def.remainingWork && workNudges < 2) {
+        const left = await def.remainingWork(ctx).catch(() => null);
+        if (left) {
+          workNudges++;
+          steps.push({ thought: step.thought, tool: "(finish refused)", result: { error: "work remains" } });
+          messages.push({ role: "user", content: left });
+          continue;
+        }
       }
       if (step.action.type === "finish") {
         summary = step.action.summary;

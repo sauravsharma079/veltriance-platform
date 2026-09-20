@@ -3,9 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { moduleGuard } from "@/lib/licensing";
 import { getCurrentOrganization } from "@/lib/tenant";
-import { validateTaxOrBankField } from "@/lib/validators";
 import { recomputeAndSaveSupplierRisk } from "@/lib/supplier-risk";
-import { requirementsFor } from "@/lib/onboarding-requirements";
+import { saveOnboardingProfile } from "@/lib/onboarding";
 
 async function getCtx() {
   const sb = await createClient();
@@ -35,41 +34,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   const ctx = await getCtx();
   if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   { const blocked = moduleGuard(ctx.org, "SUPPLIER_RISK"); if (blocked) return blocked; }
-  const body = await req.json();
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   const existingSupplier = await prisma.supplier.findFirst({ where: { id, organizationId: ctx.org.id } });
   if (!existingSupplier) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const country = body.country || existingSupplier.country || "Other";
-  const req_ = requirementsFor(country);
-  const FIELDS = [
-    "legalName", "businessType",
-    ...req_.taxFields.map(f => f.key),
-    ...req_.bankFields.map(f => f.key),
-    "beneficiaryName", "regAddressLine1", "regCity", "regState", "regPostal",
-  ];
-  const filled = FIELDS.filter(f => body[f] && String(body[f]).trim()).length;
-  const completionScore = Math.round((filled / FIELDS.length) * 100);
-
-  const validation: Record<string, { valid: boolean; message?: string }> = {};
-  for (const f of [...req_.taxFields, ...req_.bankFields]) {
-    if (f.validator && body[f.key]) validation[f.key] = validateTaxOrBankField(f.validator, body[f.key]);
-  }
-  const invalidFields = Object.entries(validation).filter(([, r]) => !r.valid);
-  if (invalidFields.length > 0) {
-    return NextResponse.json({
-      error: invalidFields.map(([field, r]) => `${field}: ${r.message}`).join(", "),
-      validation,
-    }, { status: 422 });
-  }
-
-  const profile = await prisma.supplierOnboardingProfile.upsert({
-    where: { supplierId: id },
-    create: { supplierId: id, ...body, country, completionScore, validation },
-    update: { ...body, country, completionScore, validation, updatedAt: new Date() },
-  });
-  const STAGES = ["REGISTRATION","VALIDATION","RISK_ASSESSMENT","COMPLIANCE_REVIEW","PROCUREMENT_APPROVAL","ACTIVE"];
-  const idx = completionScore >= 80 ? 3 : completionScore >= 50 ? 2 : completionScore >= 20 ? 1 : 0;
-  await prisma.supplier.update({ where: { id }, data: { country, onboardingStage: STAGES[idx] as never } });
+  // Same validation, scoring and stage rules as the vendor's own portal, and only whitelisted fields are written.
+  const saved = await saveOnboardingProfile(id, body as Record<string, unknown>);
+  if (saved.ok === false) return NextResponse.json({ error: saved.error, validation: saved.validation }, { status: saved.status });
   const riskBreakdown = await recomputeAndSaveSupplierRisk(id);
-  return NextResponse.json({ profile, completionScore, riskBreakdown, requirements: req_ });
+  return NextResponse.json({ profile: saved.profile, completionScore: saved.completionScore, riskBreakdown, requirements: saved.requirements });
 }

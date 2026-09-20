@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Star, Mail, Phone, MapPin, BarChart3, Shield, RefreshCw, FileText, Upload, Trash2, Check, X as XIcon, Zap, ClipboardList, Pencil } from "lucide-react";
 import { ActivityLog } from "@/components/ActivityLog";
+import { SupplierOnboardingPanel } from "@/components/SupplierOnboardingPanel";
 
 type Supplier = { id:string; name:string; code:string|null; category:string|null; tier:string|null; status:string; preferred:boolean; rating:number|null; riskScore:number|null; riskLevel:string|null; city:string|null; country:string|null; addressLine1:string|null; addressLine2:string|null; state:string|null; postalCode:string|null; website:string|null; contactEmail:string|null; contactName:string|null; contactPhone:string|null; paymentTerms:string|null; currency:string|null; onTimeDelivery:number|null; qualityScore:number|null; invoiceAccuracy:number|null; responsivenessScore:number|null; onboardingStage:string|null; complianceScore:number|null; erpSyncStatus:string|null; erpSyncedAt:string|null; erpSupplierId:string|null; poTransmissionMethod:string|null; cxmlEndpoint:string|null; assignedUserId:string|null; assignedUser:{id:string;name:string}|null; contacts?:{id:string;name:string;email:string|null;phone:string|null;role:string|null}[]; };
 
@@ -129,6 +130,7 @@ export default function SupplierDetailPage(){
         <button onClick={load} className="size-8 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50"><RefreshCw className={`size-3.5 text-gray-400 ${busy?"animate-spin":""}`}/></button>
       </div>
       {error&&<div className="mx-8 mt-4 bg-red-50 border border-red-200 text-red-700 text-xs px-4 py-2.5 rounded-xl">{error}</div>}
+      {supplier.status==="PENDING_APPROVAL"&&<div className="px-8 pt-6"><SupplierOnboardingPanel supplierId={id} onChanged={load}/></div>}
       <div className="px-8 py-6 grid grid-cols-3 gap-5">
         <div className="col-span-2 space-y-5">
           <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">

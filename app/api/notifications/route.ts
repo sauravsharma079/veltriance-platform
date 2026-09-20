@@ -94,7 +94,15 @@ export async function GET() {
     });
   }
 
+  // New vendors who've finished their onboarding and are waiting for someone to review and approve.
+  const vendorReviews: Notification[] = [];
+  if (profile.role === "PROCUREMENT" || profile.role === "ADMIN") {
+    const ready = await prisma.supplier.findMany({ where: { organizationId: orgId, status: "PENDING_APPROVAL", portalSubmittedAt: { not: null } }, select: { id: true, name: true, portalSubmittedAt: true }, orderBy: { portalSubmittedAt: "asc" }, take: 20 });
+    for (const v of ready) vendorReviews.push({ id: `vendor-review-${v.id}`, type: "vendor_review", title: "Vendor ready for review", body: `${v.name} has completed onboarding`, href: `/dashboard/suppliers/${v.id}`, urgent: true, createdAt: v.portalSubmittedAt!.toISOString() });
+  }
+
   const notifications: Notification[] = [
+    ...vendorReviews,
     ...contractApprovals,
     ...contractAlerts,
     ...pendingSteps.map(s => ({

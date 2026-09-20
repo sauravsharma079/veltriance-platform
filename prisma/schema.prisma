@@ -190,6 +190,16 @@ model Supplier {
   notes           String?
   customFieldAnswers Json?       // Record<fieldKey, value> for entity=SUPPLIER CustomFields (Dynamic Questionnaire Engine)
   riskBreakdown   Json?          // domain-by-domain risk breakdown + rationale from the last risk assessment
+
+  // ── Self-service onboarding (vendor portal) ──
+  // The vendor's personal link is a random token; only its SHA-256 hash is stored.
+  portalTokenHash          String?   @unique
+  portalInvitedAt          DateTime?
+  portalSubmittedAt        DateTime? // the vendor says "I'm done" — ready for a human to review
+  onboardingReminders      Int       @default(0)
+  lastOnboardingReminderAt DateTime?
+  // The onboarding agent's advice: { decision, reasoning, at }. Advice only — it never approves.
+  onboardingRecommendation Json?
   erpSupplierId   String?        // vendor/supplier ID as created in the connected ERP, once synced
   erpSyncStatus   String?        // NOT_SYNCED | SYNCING | SYNCED | FAILED
   erpSyncedAt     DateTime?

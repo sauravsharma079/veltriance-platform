@@ -125,7 +125,18 @@ export default function AgentsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-xs text-gray-400">{titleOf(a.agentKey)} · {new Date(a.createdAt).toLocaleString()}</p>
-                    {a.tool === "propose_revision" ? (
+                    {a.tool === "send_vendor_onboarding_link" ? (
+                      <>
+                        <p className="text-sm font-medium text-gray-900 mt-1">Email {String(a.input.supplierName ?? "the vendor")} their onboarding link</p>
+                        <p className="text-xs text-gray-500 mt-1">The email lists exactly what they still need to provide, and a fresh personal link replaces any earlier one.{a.input.note ? ` Note added: “${String(a.input.note)}”` : ""}</p>
+                      </>
+                    ) : a.tool === "save_onboarding_recommendation" ? (
+                      <>
+                        <p className="text-sm font-medium text-gray-900 mt-1">Recommendation for {String(a.input.supplierName ?? "the vendor")}: {String(a.input.decision).replace("_", " ")}</p>
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{String(a.input.reasoning ?? "")}</p>
+                        <a href={`/dashboard/suppliers/${String(a.input.supplierId)}`} className="text-xs text-[#1A2A52] underline">Open the supplier</a>
+                      </>
+                    ) : a.tool === "propose_revision" ? (
                       <>
                         <p className="text-sm font-medium text-gray-900 mt-1">Proposed contract revision: {String(a.input.changeNote ?? "")}</p>
                         <a href={`/dashboard/contracts/${String(a.input.contractId)}`} className="text-xs text-[#1A2A52] underline">Open the contract</a>
