@@ -5,9 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { moduleGuard } from "@/lib/licensing";
 import { logAudit } from "@/lib/audit";
 import { notifyCurrentApprovers } from "@/lib/approval-notify";
-import { createPurchaseOrder } from "@/lib/requisition-approval";
+import { routeApproved } from "@/lib/requisition-approval";
 import { getCurrentOrganization } from "@/lib/tenant";
-import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
+import { STATUS_FOR_STEP } from "@/lib/approval-matrix";
+import { planRequisition } from "@/lib/orchestrator";
 import { errorMessage } from "@/lib/errors";
 
 /**
@@ -44,9 +45,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!isOwner && !canSubmitOnBehalf)
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const approvalSteps = await resolveApprovalSteps(
-      organization.id, Number(requisition.totalAmount), requisition.category, requisition.department
-    );
+    const lines = await prisma.requisitionLineItem.findMany({ where: { requisitionId: id }, select: { supplierId: true } });
+    const plan = await planRequisition({
+      organizationId: organization.id, requestorId: requisition.requestorId, amount: Number(requisition.totalAmount), currency: requisition.currency,
+      category: requisition.category, department: requisition.department, costCenter: requisition.costCenter, requisitionId: id,
+      supplierIds: [...new Set(lines.map(l => l.supplierId).filter((x): x is string => !!x))],
+    });
+    if (plan.decision.blocked) return NextResponse.json({ error: plan.decision.blocked, code: "BUDGET_BLOCKED" }, { status: 422 });
+    const approvalSteps = plan.decision.steps;
     const newStatus = approvalSteps.length > 0
       ? STATUS_FOR_STEP[approvalSteps[0].stepType]
       : RequisitionStatus.APPROVED;
@@ -56,6 +62,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       data: {
         status: newStatus,
         submittedAt: new Date(),
+        requireSourcing: plan.decision.requireSourcing,
+        ...(plan.policyException && { policyException: true, policyExceptionNote: [requisition.policyExceptionNote, plan.policyExceptionNote].filter(Boolean).join(" ") }),
         approvalSteps: {
           create: approvalSteps.map((step, i) => ({
             stepType: step.stepType,
@@ -78,9 +86,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     // Tell the approvers straight away — or, if a rule approved it outright, raise the PO now.
     if (approvalSteps.length > 0) await notifyCurrentApprovers({ requisitionId: id, origin: req.nextUrl.origin }).catch(e => console.error("[submit] approver notification failed:", e));
-    else await createPurchaseOrder(id, organization.id, { id: profile.id, name: profile.name, role: profile.role }).catch(e => console.error("[submit] auto-approved PO creation failed:", e));
+    else {
+      await logAudit({ organizationId: organization.id, userName: "Policy engine", action: "APPROVED", entity: "REQUISITION", entityId: id, entityLabel: requisition.requisitionNumber, details: { auto: true, reason: plan.decision.notes[0] } });
+      await routeApproved({ requisitionId: id, organizationId: organization.id, actor: { id: profile.id, name: profile.name, role: profile.role } }).catch(e => console.error("[submit] routing failed:", e));
+    }
 
-    return NextResponse.json({ requisition: updated });
+    return NextResponse.json({ requisition: updated, policy: { autoApproved: plan.decision.autoApproved, requireSourcing: plan.decision.requireSourcing, flags: plan.decision.flags, notes: plan.decision.notes } });
   } catch (e) {
     console.error("[requisitions submit]", errorMessage(e));
     return NextResponse.json({ error: errorMessage(e, "Failed to submit requisition") }, { status: 500 });

@@ -5,10 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { moduleGuard } from "@/lib/licensing";
 import { generateRequisitionNumber } from "@/lib/requisition-number";
-import { resolveApprovalSteps, STATUS_FOR_STEP } from "@/lib/approval-matrix";
+import { STATUS_FOR_STEP } from "@/lib/approval-matrix";
+import { planRequisition } from "@/lib/orchestrator";
 import { logAudit } from "@/lib/audit";
 import { notifyCurrentApprovers } from "@/lib/approval-notify";
-import { createPurchaseOrder } from "@/lib/requisition-approval";
+import { routeApproved } from "@/lib/requisition-approval";
 import { getCurrentOrganization } from "@/lib/tenant";
 import { parseRequiredDate } from "@/lib/date-phrase";
 
@@ -146,9 +147,14 @@ export async function POST(req: NextRequest) {
       select: { requisitionNumber: true },
     });
 
-    const approvalSteps = await resolveApprovalSteps(
-      organization.id, totalAmount, d.category, d.department ?? profile.department
-    );
+    // Approval rules + budgets + policy rules decide how this request travels — and whether it goes anywhere.
+    const plan = await planRequisition({
+      organizationId: organization.id, requestorId: profile.id, amount: totalAmount, currency: d.currency,
+      category: d.category ?? null, department: d.department ?? profile.department ?? null, costCenter: d.costCenter ?? profile.costCenter ?? null,
+      supplierIds: [...new Set(lineItemsWithTotals.map(l => l.supplierId).filter((x): x is string => !!x))],
+    });
+    if (plan.decision.blocked) return NextResponse.json({ error: plan.decision.blocked, code: "BUDGET_BLOCKED" }, { status: 422 });
+    const approvalSteps = plan.decision.steps;
     const initialStatus = approvalSteps.length > 0
       ? STATUS_FOR_STEP[approvalSteps[0].stepType]
       : RequisitionStatus.APPROVED;
@@ -176,8 +182,9 @@ export async function POST(req: NextRequest) {
         totalAmount,
         taxAmount: totalTax,
         businessJustification: d.businessJustification,
-        policyException: d.policyException,
-        policyExceptionNote: d.policyExceptionNote,
+        policyException: d.policyException || plan.policyException,
+        policyExceptionNote: [d.policyExceptionNote, plan.policyExceptionNote].filter(Boolean).join(" ") || undefined,
+        requireSourcing: plan.decision.requireSourcing,
         chartOfAccountId: d.chartOfAccountId,
         glCoding: d.glCoding as Prisma.InputJsonValue | undefined,
         customFieldAnswers: d.customFieldAnswers as Prisma.InputJsonValue | undefined,
@@ -237,10 +244,15 @@ export async function POST(req: NextRequest) {
     });
 
     if (approvalSteps.length > 0) await notifyCurrentApprovers({ requisitionId: requisition.id, origin: req.nextUrl.origin }).catch(e => console.error("[intake] approver notification failed:", e));
-    else await createPurchaseOrder(requisition.id, organization.id, { id: profile.id, name: profile.name, role: profile.role }).catch(e => console.error("[intake] auto-approved PO creation failed:", e));
+    else {
+      // Approved outright by policy: record who decided (nobody — a rule did) and carry straight on.
+      await logAudit({ organizationId: organization.id, userName: "Policy engine", action: "APPROVED", entity: "REQUISITION", entityId: requisition.id, entityLabel: requisition.requisitionNumber, details: { auto: true, reason: plan.decision.notes[0] } });
+      await routeApproved({ requisitionId: requisition.id, organizationId: organization.id, actor: { id: profile.id, name: profile.name, role: profile.role } }).catch(e => console.error("[intake] routing failed:", e));
+    }
 
     return NextResponse.json({
       requisition,
+      policy: { autoApproved: plan.decision.autoApproved, requireSourcing: plan.decision.requireSourcing, flags: plan.decision.flags, notes: plan.decision.notes },
       warning: potentialDupe
         ? `A similar request (${potentialDupe.requisitionNumber}) was already submitted this week. Please check if this is a duplicate.`
         : null,

@@ -4,7 +4,8 @@ import { logAudit } from "@/lib/audit";
 import { canActOnStep, STATUS_FOR_STEP } from "@/lib/approval-matrix";
 import { generatePONumber } from "@/lib/po-number";
 import { sendPurchaseOrder } from "@/lib/po-send";
-import { sendEmail } from "@/lib/email";
+import { tellRequester } from "@/lib/requester-notify";
+import { startSourcing } from "@/lib/orchestrator";
 import { activeDelegators } from "@/lib/approval-delegation";
 import { notifyCurrentApprovers } from "@/lib/approval-notify";
 
@@ -58,7 +59,7 @@ export async function decideStep(opts: {
       prisma.requisition.update({ where: { id }, data: { status: "REJECTED" } }),
     ]);
     await audit("REJECTED", { comment: opts.comment });
-    await tellRequester(requisition, "rejected", actor.name, opts.comment);
+    await tellRequester(requisition, "rejected", { by: actor.name, comment: opts.comment });
     return { status: 200, json: { status: "REJECTED" } };
   }
 
@@ -84,9 +85,8 @@ export async function decideStep(opts: {
     return { status: 200, json: { status: newStatus } };
   }
 
-  const po = await createPurchaseOrder(requisition.id, organizationId, actor).catch(e => { console.error("[approve] PO auto-creation failed:", e); return null; });
-  await tellRequester(requisition, "approved", actor.name, opts.comment, po);
-  return { status: 200, json: { status: newStatus, purchaseOrderId: po?.id ?? null } };
+  const routed = await routeApproved({ requisitionId: requisition.id, organizationId, actor }).catch(e => { console.error("[approve] routing failed:", e); return null; });
+  return { status: 200, json: { status: newStatus, purchaseOrderId: routed?.purchaseOrder?.id ?? null, sourcingEventId: routed?.sourcingEventId ?? null } };
 }
 
 /**
@@ -129,11 +129,22 @@ export async function createPurchaseOrder(requisitionId: string, organizationId:
   return po;
 }
 
-/** Closes the loop with the requester, who otherwise never hears what happened to their request. */
-export async function tellRequester(req: { requisitionNumber: string; title: string; requestor: { name: string; email: string } }, outcome: "approved" | "rejected", by: string, comment?: string, po?: { poNumber: string } | null) {
-  const base = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "app.veltriance.com").replace(/^https?:\/\//, "");
-  const text = outcome === "approved"
-    ? `Hello ${req.requestor.name},\n\nGood news — your request "${req.title}" (${req.requisitionNumber}) has been approved.${po ? `\n\nPurchase order ${po.poNumber} has been raised${""}.` : ""}\n\nTrack it here: https://${base}/dashboard/requisitions\n`
-    : `Hello ${req.requestor.name},\n\nYour request "${req.title}" (${req.requisitionNumber}) was not approved by ${by}.${comment ? `\n\nTheir comment: ${comment}` : ""}\n\nYou can revise and resubmit it: https://${base}/dashboard/requisitions\n`;
-  await sendEmail({ to: req.requestor.email, subject: `${req.requisitionNumber} ${outcome}: ${req.title}`, text }).catch(() => {});
+/**
+ * A request is fully approved (by people, or by policy). What happens next is decided by policy, not by
+ * someone remembering to do it: above the quote threshold it goes out to competitive quotes; otherwise the
+ * PO is raised and sent. Safe to call twice — an existing PO or sourcing event is returned, not duplicated.
+ */
+export async function routeApproved(opts: { requisitionId: string; organizationId: string; actor: Actor }) {
+  const req = await prisma.requisition.findUnique({ where: { id: opts.requisitionId }, include: { requestor: { select: { name: true, email: true } }, purchaseOrder: { select: { id: true, poNumber: true } } } });
+  if (!req || req.organizationId !== opts.organizationId) return null;
+  if (req.purchaseOrder) return { purchaseOrder: req.purchaseOrder, sourcingEventId: req.sourcingEventId };
+  if (req.requireSourcing) {
+    if (req.sourcingEventId) return { purchaseOrder: null, sourcingEventId: req.sourcingEventId };
+    const ev = await startSourcing({ requisitionId: req.id, organizationId: opts.organizationId });
+    await tellRequester(req, "sourcing");
+    return { purchaseOrder: null, sourcingEventId: ev?.id ?? null };
+  }
+  const po = await createPurchaseOrder(req.id, opts.organizationId, opts.actor);
+  await tellRequester(req, "approved", { poNumber: po?.poNumber });
+  return { purchaseOrder: po, sourcingEventId: null };
 }

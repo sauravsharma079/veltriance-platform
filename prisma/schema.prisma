@@ -58,6 +58,8 @@ model Organization {
   agentRuns        AgentRun[]
   goodsReceipts    GoodsReceipt[]
   invoices         Invoice[]
+  budgets          Budget[]
+  policyRules      PolicyRule[]
   contracts        Contract[]
   sourcingEvents   SourcingEvent[]
   contractClauses  ContractClause[]
@@ -403,6 +405,9 @@ model Requisition {
   businessJustification String?
   policyException   Boolean             @default(false)
   policyExceptionNote String?
+  // Set at submission by the policy engine: on approval this goes to competitive quotes, not straight to a PO.
+  requireSourcing     Boolean             @default(false)
+  sourcingEventId     String?
   chartOfAccountId  String?
   chartOfAccount    ChartOfAccount?     @relation(fields: [chartOfAccountId], references: [id])
   glCoding          Json?
@@ -615,6 +620,7 @@ model PurchaseOrder {
   @@unique([organizationId, poNumber])
   receipts         GoodsReceipt[]
   invoices         Invoice[]
+  receiptPromptedAt DateTime?  // when we asked the requester to confirm delivery
 }
 
 model PurchaseOrderLineItem {
@@ -1455,4 +1461,45 @@ model InvoiceLine {
 
   @@index([invoiceId])
   @@index([poLineId])
+}
+
+
+// ───────────────────────────── Budgets & policy ─────────────────────────────
+
+// A spending limit for a period, optionally narrowed to a department, cost centre and/or category
+// (blank = applies to everything). Commitments are computed from live requisitions and POs — see
+// lib/budget.ts — so there is nothing to keep in sync by hand.
+model Budget {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  amount         Decimal      @db.Decimal(14, 2)
+  currency       String       @default("INR")
+  department     String?
+  costCenter     String?
+  category       String?
+  warnPct        Int          @default(80)     // flag approvers once this much is committed
+  hardStop       Boolean      @default(false)  // true = refuse over-budget requests; false = require Finance approval
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, active])
+}
+
+// One configurable rule of the policy engine (types and parameters: lib/policy.ts).
+model PolicyRule {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type           String       // AUTO_APPROVE | REQUIRE_SOURCING | SPLIT_ORDER | CATEGORY_STEP
+  name           String
+  params         Json
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, active])
 }

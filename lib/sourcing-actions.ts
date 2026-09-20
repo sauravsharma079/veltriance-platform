@@ -6,6 +6,7 @@ import { sendBidInvite, type BidInvite } from "@/lib/sourcing-invites";
 import { nextContractNumber } from "@/lib/contracts";
 import { generatePONumber } from "@/lib/po-number";
 import { registerNewVendor, vendorReadiness } from "@/lib/vendors";
+import { tellRequester } from "@/lib/requester-notify";
 
 // The business rules behind the sourcing lifecycle, kept out of the route files so they
 // can be exercised directly (the routes just add auth, licence checks and HTTP).
@@ -80,7 +81,14 @@ export async function transitionEvent(opts: Actor & { id: string; action: "publi
     const ready = vendorReadiness(supplier);
     if (ready.ready === false) warnings.push(ready.reason);
   }
-  return { status: 200, json: { status: rule.to, invites, warnings } };
+  // The award is the human decision. For an event that came from a requisition, everything after it is automatic.
+  let purchaseOrderId: string | null = null;
+  if (action === "award" && event.requisitionId) {
+    const po = await createPoFromAward({ org, profile, id });
+    if (po.status === 201) purchaseOrderId = (po.json as { purchaseOrder: { id: string } }).purchaseOrder.id;
+    else warnings.push(`The purchase order wasn't raised automatically: ${(po.json as { error?: string }).error ?? "unknown reason"}`);
+  }
+  return { status: 200, json: { status: rule.to, invites, warnings, purchaseOrderId } };
 }
 
 export async function createContractFromAward(opts: Actor & { id: string }): Promise<Result> {
@@ -164,12 +172,14 @@ export async function createPoFromAward(opts: Actor & { id: string }): Promise<R
   if (readiness.ready === false) return { status: 422, json: { error: readiness.reason } };
 
   const bid = winner.bid;
+  // A sourcing event that began as a requisition raises the PO for that requisition (once), closing the loop.
+  const linkReq = event.requisitionId && !(await prisma.purchaseOrder.findUnique({ where: { requisitionId: event.requisitionId }, select: { id: true } })) ? event.requisitionId : undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const po = await prisma.$transaction(async tx => {
         const created = await tx.purchaseOrder.create({
           data: {
-            organizationId: org.id, poNumber: await generatePONumber(org.id), supplierId: winner.supplierId, createdById: profile.id,
+            organizationId: org.id, poNumber: await generatePONumber(org.id), supplierId: winner.supplierId, createdById: profile.id, requisitionId: linkReq,
             currency: event.currency, subtotal: bid.totalAmount, taxAmount: 0, totalAmount: bid.totalAmount,
             deliveryAddress: event.deliveryLocation, expectedDelivery: event.requiredDate ?? undefined,
             routingMethod: winner.supplier!.poTransmissionMethod ?? "EMAIL", cxmlEndpoint: winner.supplier!.cxmlEndpoint ?? undefined,
@@ -189,6 +199,10 @@ export async function createPoFromAward(opts: Actor & { id: string }): Promise<R
         return created;
       });
       await logAudit({ organizationId: org.id, userId: profile.id, userName: profile.name, action: "CREATED", entity: "PURCHASE_ORDER", entityId: po.id, entityLabel: po.poNumber, details: { fromSourcing: event.eventNumber } });
+      if (linkReq) {
+        const req = await prisma.requisition.findUnique({ where: { id: linkReq }, select: { requisitionNumber: true, title: true, requestor: { select: { name: true, email: true } } } });
+        if (req) await tellRequester(req, "ordered", { poNumber: po.poNumber });
+      }
       return { status: 201, json: { purchaseOrder: po } };
     } catch (e) {
       if (e instanceof Error && e.message === "ALREADY_CREATED") return { status: 409, json: { error: "A purchase order was already created from this award" } };

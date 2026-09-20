@@ -1,7 +1,7 @@
-import { createHmac, createHash, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { publicBaseUrl } from "@/lib/contracts";
+import { signLink, verifyLink } from "@/lib/signed-links";
 
 // Approvals reach people; people don't have to go looking for them. Each approver is emailed with a
 // personal one-click link (no login), and reminded and escalated if a request sits too long.
@@ -12,29 +12,17 @@ const LINK_DAYS = 5;
 // ─── Signed links ────────────────────────────────────────────────────────────
 // A link names one person and one requisition at one approval stage, expires, and can't be edited.
 // It carries authority only while that stage is still open: once decided (in the app or by email) it
-// stops working. Signed with a key derived from a server-only secret, so no extra storage is needed.
-
-const key = () => createHash("sha256").update(`veltriance-approval-link:${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`).digest();
-const b64 = (b: Buffer | string) => Buffer.from(b).toString("base64url");
+// stops working. See lib/signed-links.ts.
 
 export type ApprovalLink = { r: string; u: string; g: number; e: number };
 
 export function makeApprovalToken(p: { requisitionId: string; userId: string; sequence: number }, now = Date.now()): string {
-  const payload = b64(JSON.stringify({ r: p.requisitionId, u: p.userId, g: p.sequence, e: now + LINK_DAYS * 86_400_000 } satisfies ApprovalLink));
-  return `${payload}.${b64(createHmac("sha256", key()).update(payload).digest())}`;
+  return signLink("approval", { r: p.requisitionId, u: p.userId, g: p.sequence }, LINK_DAYS, now);
 }
 
 export function verifyApprovalToken(token: string, now = Date.now()): ApprovalLink | null {
-  const [payload, sig] = token.split(".");
-  if (!payload || !sig || token.length > 600) return null;
-  const good = createHmac("sha256", key()).update(payload).digest();
-  let given: Buffer;
-  try { given = Buffer.from(sig, "base64url"); } catch { return null; }
-  if (given.length !== good.length || !timingSafeEqual(given, good)) return null;
-  try {
-    const p = JSON.parse(Buffer.from(payload, "base64url").toString()) as ApprovalLink;
-    return typeof p.r === "string" && typeof p.u === "string" && typeof p.g === "number" && p.e > now ? p : null;
-  } catch { return null; }
+  const p = verifyLink<{ r: string; u: string; g: number }>(token, "approval", now);
+  return p && typeof p.r === "string" && typeof p.u === "string" && typeof p.g === "number" ? { r: p.r, u: p.u, g: p.g, e: p.e } : null;
 }
 
 // ─── Who should be told ──────────────────────────────────────────────────────

@@ -60,7 +60,7 @@ competitor column as a directional checklist, not a verified feature matrix.
 | # | Tranche | Why now |
 |---|---|---|
 | 1 | **Touchless approvals** — *done* | The biggest hole in the core flow: nobody was told about an approval. |
-| 2 | **Budgets + policy engine + orchestrator** | Turns separate modules into one autonomous chain and adds the controls finance asks for first. |
+| 2 | **Budgets + policy engine + orchestrator** — *done* | Turns separate modules into one autonomous chain and adds the controls finance asks for first. |
 | 3 | **Quality and security gate** — tests, CI, rate limiting, headers, SSO/MFA, field encryption, audit export | Required before any enterprise security review. Also protects everything built since. |
 | 4 | **Email intake, then Slack/Teams** | Adoption: requesters stay where they already work. |
 | 5 | **Analytics and savings** | What executives buy on; needs the data from tranche 2. |

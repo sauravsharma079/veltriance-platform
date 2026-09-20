@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/errors";
 import { expireContracts } from "@/lib/contracts";
 import { closeOverdueEvents } from "@/lib/sourcing";
 import { runApprovalReminders } from "@/lib/approval-notify";
+import { promptDeliveryConfirmations } from "@/lib/orchestrator";
 
 export const maxDuration = 300;
 
@@ -27,8 +28,9 @@ export async function GET(req: NextRequest) {
   const expired = await expireContracts();
   const closedEvents = await closeOverdueEvents();
   // Approval reminders and escalations are plain rules, so they run even when the AI is unavailable.
+  const deliveries = await promptDeliveryConfirmations().catch(e => { console.error("[cron] delivery prompts failed:", e); return null; });
   const approvals = await runApprovalReminders().catch(e => { console.error("[cron] approval reminders failed:", e); return null; });
-  if (!llmConfigured()) return NextResponse.json({ error: "No LLM configured", expiredContracts: expired, closedEvents, approvals }, { status: 503 });
+  if (!llmConfigured()) return NextResponse.json({ error: "No LLM configured", expiredContracts: expired, closedEvents, approvals, deliveries }, { status: 503 });
 
   const orgs = await prisma.organization.findMany({
     where: { licensedModules: { has: "AGENTS" } },
@@ -49,5 +51,5 @@ export async function GET(req: NextRequest) {
       }
     }
   }
-  return NextResponse.json({ ran: results.length, expiredContracts: expired, closedEvents, approvals, results });
+  return NextResponse.json({ ran: results.length, expiredContracts: expired, closedEvents, approvals, deliveries, results });
 }
