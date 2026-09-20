@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Send, CheckCircle, Mail, Clipboard, Download, FileCode, History } from "lucide-react";
 import { ActivityLog } from "@/components/ActivityLog";
+import { PoReceiving } from "@/components/PoReceiving";
 
 type PO = {
   id: string;
@@ -444,6 +445,8 @@ export default function PODetailPage() {
           PO {po.changeOrderNumber > 0 ? `re-sent (change order #${po.changeOrderNumber})` : "sent"} via {po.routingMethod.toLowerCase()} on {new Date(po.issuedAt).toLocaleDateString()}
         </div>
       )}
+
+      <PoReceiving poId={id} onReceived={load} />
 
       <ActivityLog entity="PURCHASE_ORDER" entityId={id} title="Activity" />
     </div>

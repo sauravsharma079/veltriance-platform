@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, FileText, MessageSquarePlus, Building2,
   CheckSquare, Settings, LogOut, ShoppingCart, Search,
-  Plug, Code2, Package, History, Bot, FileSignature, Gavel,
+  Plug, Code2, Package, History, Bot, FileSignature, Gavel, Receipt,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { NotificationCenter } from "@/components/NotificationCenter";
@@ -23,6 +23,7 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; ro
   { href: "/dashboard/suppliers",       label: "Suppliers",       icon: Building2,         roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"] },
   { href: "/dashboard/catalogs",        label: "Catalogs",        icon: Package,           roles: ["REQUESTOR","APPROVER","PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
   { href: "/dashboard/purchase-orders", label: "Purchase Orders", icon: ShoppingCart,      roles: ["PROCUREMENT","ADMIN"], module: "INTAKE_TO_PO" },
+  { href: "/dashboard/invoices",        label: "Invoices",        icon: Receipt,          roles: ["PROCUREMENT","ADMIN"], module: "INVOICING" },
   { href: "/dashboard/sourcing",        label: "Sourcing",        icon: Gavel,             roles: ["PROCUREMENT","ADMIN"], module: "SOURCING" },
   { href: "/dashboard/contracts",       label: "Contracts",       icon: FileSignature,     roles: ["PROCUREMENT","ADMIN"], module: "CONTRACTS" },
   { href: "/dashboard/agents",          label: "Agents",          icon: Bot,               roles: ["PROCUREMENT","ADMIN"], module: "AGENTS" },

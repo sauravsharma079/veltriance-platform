@@ -14,3 +14,8 @@ export const SOURCING_STATUS_STYLE: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-600", OPEN: "bg-blue-50 text-blue-700", EVALUATION: "bg-amber-50 text-amber-700",
   AWARDED: "bg-emerald-50 text-emerald-700", CANCELLED: "bg-gray-100 text-gray-400",
 };
+
+export const INVOICE_STATUS_STYLE: Record<string, string> = {
+  RECEIVED: "bg-gray-100 text-gray-600", MATCHED: "bg-blue-50 text-blue-700", EXCEPTION: "bg-red-50 text-red-700",
+  APPROVED: "bg-emerald-50 text-emerald-700", REJECTED: "bg-gray-100 text-gray-400", PAID: "bg-purple-50 text-purple-700",
+};

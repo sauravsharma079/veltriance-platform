@@ -101,7 +101,27 @@ export async function GET() {
     for (const v of ready) vendorReviews.push({ id: `vendor-review-${v.id}`, type: "vendor_review", title: "Vendor ready for review", body: `${v.name} has completed onboarding`, href: `/dashboard/suppliers/${v.id}`, urgent: true, createdAt: v.portalSubmittedAt!.toISOString() });
   }
 
+  // Invoices needing a decision, and deliveries that should have arrived by now.
+  const invoiceAlerts: Notification[] = [];
+  if ((profile.role === "PROCUREMENT" || profile.role === "ADMIN") && hasModule(organization, "INVOICING")) {
+    const [exc, waiting] = await Promise.all([
+      prisma.invoice.count({ where: { organizationId: orgId, status: "EXCEPTION" } }),
+      prisma.invoice.count({ where: { organizationId: orgId, status: "MATCHED", createdById: { not: profile.id } } }),
+    ]);
+    if (exc > 0) invoiceAlerts.push({ id: "invoice-exceptions", type: "invoice_exception", title: `${exc} invoice${exc > 1 ? "s" : ""} with exceptions`, body: "Failed the three-way match — needs a decision", href: "/dashboard/invoices?status=EXCEPTION", urgent: true, createdAt: new Date().toISOString() });
+    if (waiting > 0) invoiceAlerts.push({ id: "invoice-approvals", type: "invoice_approval", title: `${waiting} invoice${waiting > 1 ? "s" : ""} awaiting approval`, body: "Matched cleanly — ready for your approval", href: "/dashboard/invoices?status=MATCHED", urgent: true, createdAt: new Date().toISOString() });
+  }
+  if (hasModule(organization, "INTAKE_TO_PO")) {
+    const late = await prisma.purchaseOrder.findMany({
+      where: { organizationId: orgId, status: { in: ["SENT", "ACKNOWLEDGED", "PARTIALLY_RECEIVED"] }, expectedDelivery: { lt: new Date(Date.now() - 86_400_000) },
+        ...(profile.role === "PROCUREMENT" || profile.role === "ADMIN" ? {} : { createdById: profile.id }) },
+      select: { id: true, poNumber: true, expectedDelivery: true, supplier: { select: { name: true } } }, orderBy: { expectedDelivery: "asc" }, take: 10,
+    });
+    for (const p of late) invoiceAlerts.push({ id: `late-${p.id}`, type: "delivery_overdue", title: "Delivery overdue", body: `${p.poNumber}${p.supplier ? ` — ${p.supplier.name}` : ""} was due ${p.expectedDelivery!.toLocaleDateString()}`, href: `/dashboard/purchase-orders/${p.id}`, urgent: false, createdAt: p.expectedDelivery!.toISOString() });
+  }
+
   const notifications: Notification[] = [
+    ...invoiceAlerts,
     ...vendorReviews,
     ...contractApprovals,
     ...contractAlerts,
