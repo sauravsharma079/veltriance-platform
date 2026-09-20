@@ -31,9 +31,20 @@ export function newSigningToken() {
   return { token, tokenHash: sha256(token) };
 }
 
+/**
+ * The address to put in links sent to outsiders (signers, bidders). It is the canonical
+ * public domain — not whichever address the buyer happened to be on (Vercel's own
+ * *.vercel.app address, a preview URL) and not NEXT_PUBLIC_APP_URL, which points at
+ * the Vercel address in this deployment. Local development keeps using localhost.
+ */
+export function publicBaseUrl(requestOrigin?: string): string {
+  if (requestOrigin && /^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(requestOrigin)) return requestOrigin.replace(/\/$/, "");
+  const root = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "app.veltriance.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return `https://${root}`;
+}
+
 export function signingUrl(token: string, fallbackOrigin?: string): string {
-  const base = (process.env.NEXT_PUBLIC_APP_URL || fallbackOrigin || "https://app.veltriance.com").replace(/\/$/, "");
-  return `${base}/sign/${token}`;
+  return `${publicBaseUrl(fallbackOrigin)}/sign/${token}`;
 }
 
 /** Moves ACTIVE contracts past their end date to EXPIRED. Deterministic — no model involved. */

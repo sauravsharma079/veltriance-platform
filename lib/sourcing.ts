@@ -1,5 +1,6 @@
 import type { SourcingStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { publicBaseUrl } from "@/lib/contracts";
 
 export const EVENT_TYPES = ["RFQ", "RFP", "RFI"] as const;
 
@@ -18,8 +19,7 @@ export const TRANSITIONS: Record<string, { from: SourcingStatus[]; to: SourcingS
 };
 
 export function bidUrl(token: string, fallbackOrigin?: string): string {
-  const base = (process.env.NEXT_PUBLIC_APP_URL || fallbackOrigin || "https://app.veltriance.com").replace(/\/$/, "");
-  return `${base}/bid/${token}`;
+  return `${publicBaseUrl(fallbackOrigin)}/bid/${token}`;
 }
 
 /** Moves OPEN events whose deadline has passed to EVALUATION. Deterministic — no model involved. */
