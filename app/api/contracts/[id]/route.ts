@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const contract = await prisma.contract.findFirst({
     where: { id, organizationId: a.org.id },
     include: {
-      supplier: { select: { id: true, name: true, contactEmail: true, contactName: true } },
+      supplier: { select: { id: true, name: true, contactEmail: true, contactName: true, status: true, onboardingStage: true } },
       owner: { select: { id: true, name: true } },
       // tokenHash is deliberately not selected: it's the credential behind a signing link.
       signatories: { select: { id: true, party: true, name: true, email: true, title: true, status: true, signedName: true, signedAt: true, signedVersion: true, signedDocHash: true, declineReason: true, invitedAt: true }, orderBy: { createdAt: "asc" } },

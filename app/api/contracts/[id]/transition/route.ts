@@ -6,8 +6,9 @@ import { contractAccess } from "@/lib/contracts-access";
 import { TRANSITIONS } from "@/lib/contracts";
 import { inviteSignatory, type InviteResult } from "@/lib/contract-invites";
 import { approvalVerdict, eligibleApprovers, notifyApprovers } from "@/lib/contract-approval";
+import { vendorReadiness } from "@/lib/vendors";
 
-const schema = z.object({ action: z.enum(["share", "submit", "return", "approve", "cancel", "terminate"]), reason: z.string().trim().max(1000).optional(), approverId: z.string().min(1).optional() });
+const schema = z.object({ action: z.enum(["share", "submit", "return", "approve", "cancel", "terminate", "withdraw"]), reason: z.string().trim().max(1000).optional(), approverId: z.string().min(1).optional() });
 
 /**
  * Moves a contract through its lifecycle. Every rule lives here, server-side:
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const contract = await prisma.contract.findFirst({
     where: { id, organizationId: a.org.id },
-    include: { signatories: true, versions: { where: {}, orderBy: { versionNumber: "desc" }, take: 1, select: { body: true } } },
+    include: { supplier: { select: { name: true, status: true, onboardingStage: true } }, signatories: true, versions: { where: {}, orderBy: { versionNumber: "desc" }, take: 1, select: { body: true } } },
   });
   if (!contract) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!rule.from.includes(contract.status))
@@ -39,6 +40,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (action === "share" && suppliers.length === 0) return NextResponse.json({ error: "Add at least one supplier contact first — they need a link to review the draft" }, { status: 422 });
   if ((action === "submit" || action === "share") && body.trim().length < 50) return NextResponse.json({ error: "The contract has no text yet" }, { status: 422 });
   if (action === "return" && !reason) return NextResponse.json({ error: "Say why you're sending it back" }, { status: 422 });
+  if (action === "withdraw" && !reason) return NextResponse.json({ error: "Say why you're withdrawing it from signature" }, { status: 422 });
+  // Every contract needs a counterparty on file, so a new vendor is always added — and onboarded — first.
+  if (action === "submit" && !contract.supplierId) return NextResponse.json({ error: "Link this contract to a supplier first. For a new vendor, add them in the Details tab — they'll go through supplier onboarding." }, { status: 422 });
   if (action === "terminate" && !reason) return NextResponse.json({ error: "A reason is required to terminate" }, { status: 422 });
   let selfApproval = false;
   let recipients: { id: string; name: string; email: string }[] = [];
@@ -60,6 +64,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (verdict.allowed === false) return NextResponse.json({ error: verdict.reason }, { status: 403 });
     selfApproval = verdict.selfApproval;
     if (buyers.length === 0 || suppliers.length === 0) return NextResponse.json({ error: "Add at least one signatory for each side before approving" }, { status: 422 });
+    // Sending a contract out for signature binds us to the vendor, so they must have finished onboarding
+    // (an NDA is the usual exception: it's normally signed before onboarding starts).
+    const ready = vendorReadiness(contract.supplier, { allowPending: contract.type === "NDA" });
+    if (ready.ready === false) return NextResponse.json({ error: ready.reason }, { status: 422 });
   }
 
   // Only one request can win the move; a double-click or race gets a 409.
@@ -69,13 +77,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       status: rule.to,
       ...(action === "submit" && { approverId: approverId ?? null }),
       ...(action === "return" && { approverId: null }),
+      ...(action === "withdraw" && { approverId: null, approvedById: null, approvedAt: null }),
       ...(action === "approve" && { approvedById: a.profile.id, approvedAt: new Date() }),
       ...(action === "terminate" && { terminatedAt: new Date(), terminationReason: reason }),
     },
   });
   if (moved.count === 0) return NextResponse.json({ error: "The contract changed while you were working — reload and try again" }, { status: 409 });
 
-  if (reason) await prisma.contractComment.create({ data: { contractId: id, authorType: "BUYER", authorName: a.profile.name, body: `${action === "return" ? "Returned for changes" : action === "terminate" ? "Terminated" : "Note"}: ${reason}`, internal: action !== "terminate", versionNumber: contract.currentVersion } });
+  if (reason) await prisma.contractComment.create({ data: { contractId: id, authorType: "BUYER", authorName: a.profile.name, body: `${action === "return" ? "Returned for changes" : action === "withdraw" ? "Withdrawn from signature" : action === "terminate" ? "Terminated" : "Note"}: ${reason}`, internal: action !== "terminate", versionNumber: contract.currentVersion } });
+
+  if (action === "withdraw") {
+    // Anything already signed was for text or terms that are about to change, so it no longer stands.
+    await prisma.contractSignatory.updateMany({ where: { contractId: id }, data: { status: "PENDING", signedName: null, signedAt: null, signedIp: null, signedUserAgent: null, signedVersion: null, signedDocHash: null, declineReason: null } });
+  }
 
   const origin = new URL(req.url).origin;
   let invites: InviteResult[] = [];

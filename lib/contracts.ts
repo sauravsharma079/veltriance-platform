@@ -10,6 +10,8 @@ export const TRANSITIONS: Record<string, { from: ContractStatus[]; to: ContractS
   submit:             { from: ["DRAFT", "NEGOTIATION"],                 to: "PENDING_APPROVAL" },
   return:             { from: ["PENDING_APPROVAL"],                     to: "DRAFT" },
   approve:            { from: ["PENDING_APPROVAL"],                     to: "PENDING_SIGNATURE" },
+  // Pulls a contract back out of signature (e.g. to fix the supplier); earlier signatures are voided.
+  withdraw:           { from: ["PENDING_SIGNATURE"],                   to: "DRAFT" },
   cancel:             { from: ["DRAFT", "NEGOTIATION", "PENDING_APPROVAL", "PENDING_SIGNATURE"], to: "CANCELLED" },
   terminate:          { from: ["ACTIVE"],                               to: "TERMINATED" },
 };

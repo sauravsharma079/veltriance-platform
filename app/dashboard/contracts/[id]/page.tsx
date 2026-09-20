@@ -10,7 +10,7 @@ import { STATUS_STYLE, statusLabel } from "@/lib/contract-ui";
 type Sig = { id: string; party: string; name: string; email: string; title: string | null; status: string; signedName: string | null; signedAt: string | null; signedVersion: number | null; signedDocHash: string | null; declineReason: string | null; invitedAt: string | null };
 type Comment = { id: string; authorType: string; authorName: string; body: string; internal: boolean; createdAt: string; versionNumber: number | null };
 type Ver = { versionNumber: number; changeNote: string | null; source: string; createdByName: string | null; createdAt: string };
-type Contract = { id: string; contractNumber: string; title: string; type: string; status: string; description: string | null; value: string | null; currency: string; startDate: string | null; endDate: string | null; autoRenew: boolean; noticeDays: number; currentVersion: number; ownerId: string; owner: { id: string; name: string }; supplier: { id: string; name: string; contactEmail: string | null; contactName: string | null } | null; signatories: Sig[]; comments: Comment[]; versions: Ver[]; approvedAt: string | null; publishedAt: string | null; terminationReason: string | null };
+type Contract = { id: string; contractNumber: string; title: string; type: string; status: string; description: string | null; value: string | null; currency: string; startDate: string | null; endDate: string | null; autoRenew: boolean; noticeDays: number; currentVersion: number; ownerId: string; owner: { id: string; name: string }; supplier: { id: string; name: string; contactEmail: string | null; contactName: string | null; status: string; onboardingStage: string | null } | null; signatories: Sig[]; comments: Comment[]; versions: Ver[]; approvedAt: string | null; publishedAt: string | null; terminationReason: string | null };
 type Proposal = { id: string; tool: string; input: { body?: string; changeNote?: string; message?: string; internal?: boolean }; rationale: string | null; createdAt: string };
 type Approval = { meId: string; meRole: string; canApprove: boolean; selfApproval: boolean; reason: string | null; eligible: { id: string; name: string; role: string }[]; designatedName: string | null };
 type Invite = { signatoryId: string; name: string; email: string; party: string; link: string; emailed: boolean; emailNote?: string };
@@ -30,6 +30,9 @@ export default function ContractPage() {
   const [meId, setMeId] = useState<string | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
   const [choosing, setChoosing] = useState(false);
+  const [vendors, setVendors] = useState<{ id: string; name: string; status: string }[]>([]);
+  const [newVendor, setNewVendor] = useState({ name: "", email: "" });
+  const [vendorPick, setVendorPick] = useState("");
   const [approverPick, setApproverPick] = useState("");
   const [tab, setTab] = useState<(typeof TABS)[number]>("Document");
   const [draft, setDraft] = useState("");
@@ -65,6 +68,7 @@ export default function ContractPage() {
   }, [id]);
   const bodiesRef = useRef<Record<string, string>>({});
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetch("/api/suppliers").then(r => r.json()).then(d => setVendors((d.suppliers ?? []).map((x: { id: string; name: string; status: string }) => ({ id: x.id, name: x.name, status: x.status })))).catch(() => {}); }, []);
   useEffect(() => { fetch("/api/user/profile").then(r => r.json()).then(d => setMeId(d?.profile?.id ?? d?.user?.id ?? d?.id ?? null)).catch(() => {}); }, []);
 
   const current = c ? (bodies[c.currentVersion] ?? "") : "";
@@ -144,6 +148,20 @@ export default function ContractPage() {
   if (!c) return <div className="p-8 text-sm text-gray-400">Loading…</div>;
 
   const isOwner = meId === c.ownerId;
+  // Nothing binds us to a vendor until they've been through onboarding and approved.
+  const onboardingBlock = c.type === "NDA" ? (c.supplier ? null : "no supplier") : !c.supplier ? "no supplier" : c.supplier.status !== "ACTIVE" ? "onboarding" : null;
+  async function setVendor(supplierId: string) { await call("vendor", `/api/contracts/${id}`, "PATCH", { supplierId }, () => { setVendorPick(""); setInfo("Vendor linked."); }); }
+  async function addVendor() {
+    setBusy("addvendor"); setError(null);
+    const res = await fetch("/api/suppliers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newVendor.name, contactEmail: newVendor.email }) });
+    const d = await res.json().catch(() => null);
+    setBusy(null);
+    if (!res.ok) { setError(d?.error ?? "Could not add the vendor"); return; }
+    setNewVendor({ name: "", email: "" });
+    setVendors(v => [...v, { id: d.supplier.id, name: d.supplier.name, status: d.supplier.status }]);
+    await setVendor(d.supplier.id);
+    setInfo(`${d.supplier.name} was added as a new vendor and is now in your supplier onboarding queue. They'll need to be approved before this contract can be sent for signature.`);
+  }
   const suppliers = c.signatories.filter(s => s.party === "SUPPLIER");
   return (
     <div className="p-8 max-w-5xl space-y-5">
@@ -161,6 +179,14 @@ export default function ContractPage() {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-4 py-3 rounded-xl">{error}</div>}
       {info && <div className="bg-blue-50 border border-blue-200 text-blue-800 text-xs px-4 py-3 rounded-xl">{info}</div>}
 
+      {onboardingBlock && !["ACTIVE", "EXPIRED", "TERMINATED", "CANCELLED"].includes(c.status) && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs px-4 py-3 rounded-xl">
+          {onboardingBlock === "no supplier"
+            ? <>No supplier is linked to this contract yet. Link one under <button className="underline" onClick={() => setTab("Details")}>Details</button> — for a new vendor, add them there and they&apos;ll go through supplier onboarding.</>
+            : <><strong>{c.supplier!.name}</strong> is a new vendor still in supplier onboarding ({(c.supplier!.onboardingStage ?? "registration").toLowerCase().replace(/_/g, " ")}). This contract can be drafted and negotiated, but it can&apos;t be sent for signature until they&apos;re approved and Active. <Link href={`/dashboard/suppliers/${c.supplier!.id}`} className="underline">Open their onboarding</Link>.</>}
+        </div>
+      )}
+
       {/* Lifecycle actions */}
       <div className="flex flex-wrap gap-2">
         {!isApprover && c.status === "DRAFT" && <button disabled={!!busy} onClick={() => transition("share")} className={ghost}>Share with supplier</button>}
@@ -169,6 +195,7 @@ export default function ContractPage() {
           ? <button disabled={!!busy} onClick={() => transition("approve")} className={primary}>{approval.selfApproval ? "Approve (self-approval)" : "Approve"} &amp; send for signature</button>
           : <span className="text-xs text-gray-400 self-center">{approval?.reason ?? (isOwner ? "You own this contract — someone else must approve it." : "This contract is waiting on someone else.")}</span>)}
         {c.status === "PENDING_APPROVAL" && <button disabled={!!busy} onClick={() => { const r = ask("Why are you sending it back?"); if (r) transition("return", r); }} className={ghost}>Return for changes</button>}
+        {!isApprover && c.status === "PENDING_SIGNATURE" && <button disabled={!!busy} onClick={() => { const r = ask("Why are you withdrawing it from signature? (Anything already signed will be voided.)"); if (r) transition("withdraw", r); }} className={ghost}>Withdraw from signature</button>}
         {!isApprover && ["DRAFT", "NEGOTIATION", "PENDING_APPROVAL", "PENDING_SIGNATURE"].includes(c.status) && <button disabled={!!busy} onClick={() => confirm("Cancel this contract?") && transition("cancel")} className={ghost}>Cancel</button>}
         {!isApprover && c.status === "ACTIVE" && <button disabled={!!busy} onClick={() => { const r = ask("Reason for terminating"); if (r) transition("terminate", r); }} className={ghost}>Terminate</button>}
       </div>
@@ -360,6 +387,20 @@ export default function ContractPage() {
 
       {tab === "Details" && (
         <div className="grid md:grid-cols-2 gap-5">
+          <div className="md:col-span-2 bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+            <p className="text-sm font-medium text-gray-900">Vendor</p>
+            <p className="text-sm text-gray-700">{c.supplier ? <>{c.supplier.name} <span className={`ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${c.supplier.status === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{c.supplier.status === "ACTIVE" ? "approved supplier" : `onboarding — ${(c.supplier.onboardingStage ?? "registration").toLowerCase().replace(/_/g, " ")}`}</span></> : <span className="text-gray-400">None linked</span>}</p>
+            {editable ? (
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="flex gap-2"><select value={vendorPick} onChange={e => setVendorPick(e.target.value)} className={input}><option value="">Choose an existing supplier…</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.status !== "ACTIVE" ? " (onboarding)" : ""}</option>)}</select>
+                  <button disabled={!vendorPick || !!busy} onClick={() => setVendor(vendorPick)} className={primary}>Link</button></div>
+                <div className="flex gap-2 items-end"><label className="flex-1 text-xs text-gray-500">New vendor — name<input value={newVendor.name} onChange={e => setNewVendor({ ...newVendor, name: e.target.value })} className={input} /></label>
+                  <label className="flex-1 text-xs text-gray-500">Email<input type="email" value={newVendor.email} onChange={e => setNewVendor({ ...newVendor, email: e.target.value })} className={input} /></label>
+                  <button disabled={!newVendor.name || !newVendor.email || !!busy} onClick={addVendor} className={primary}>Add</button></div>
+                <p className="md:col-span-2 text-[11px] text-gray-400">A vendor you add here is registered as a new supplier and enters your supplier onboarding process. Signature is held until they&apos;re approved.</p>
+              </div>
+            ) : <p className="text-xs text-gray-400">The vendor can&apos;t be changed at this stage. To change it, withdraw the contract from signature first.</p>}
+          </div>
           <div className="bg-white border border-gray-200 rounded-xl p-5 text-sm space-y-2">
             {[["Value", c.value ? `${c.currency} ${Number(c.value).toLocaleString()}` : "—"], ["Start", c.startDate ? new Date(c.startDate).toLocaleDateString() : "—"], ["End", c.endDate ? new Date(c.endDate).toLocaleDateString() : "—"],
               ["Notice period", `${c.noticeDays} days`], ["Auto-renews", c.autoRenew ? "Yes" : "No"], ["Approved", c.approvedAt ? new Date(c.approvedAt).toLocaleDateString() : "—"], ["Published", c.publishedAt ? new Date(c.publishedAt).toLocaleDateString() : "—"],

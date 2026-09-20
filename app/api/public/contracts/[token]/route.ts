@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { sha256 } from "@/lib/contracts";
 import { createVersion, VersionError } from "@/lib/contract-versions";
+import { vendorReadiness } from "@/lib/vendors";
 
 /**
  * Unauthenticated endpoint behind the personal signing/review link. The token
@@ -15,7 +16,7 @@ async function load(token: string) {
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return null;
   const signatory = await prisma.contractSignatory.findUnique({
     where: { tokenHash: sha256(token) },
-    include: { contract: { include: { organization: { select: { name: true } }, signatories: { select: { id: true, status: true } } } } },
+    include: { contract: { include: { organization: { select: { name: true } }, supplier: { select: { name: true, status: true, onboardingStage: true } }, signatories: { select: { id: true, status: true } } } } },
   });
   if (!signatory) return null;
   return { signatory, contract: signatory.contract };
@@ -36,7 +37,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ token: str
     contract: { title: contract.title, contractNumber: contract.contractNumber, type: contract.type, status: contract.status, value: contract.value, currency: contract.currency, startDate: contract.startDate, endDate: contract.endDate, publishedAt: contract.publishedAt },
     you: { name: signatory.name, party: signatory.party, status: signatory.status, signedAt: signatory.signedAt },
     version: version?.versionNumber, body: version?.body ?? "", comments,
-    canSign: contract.status === "PENDING_SIGNATURE" && signatory.status === "PENDING",
+    // Even if it was approved earlier, nobody can sign while the vendor is still un-onboarded.
+    canSign: contract.status === "PENDING_SIGNATURE" && signatory.status === "PENDING" && vendorReadiness(contract.supplier, { allowPending: contract.type === "NDA" }).ready,
+    holdReason: contract.status === "PENDING_SIGNATURE" && vendorReadiness(contract.supplier, { allowPending: contract.type === "NDA" }).ready === false ? "This agreement can't be signed yet — supplier onboarding hasn't been completed. You'll be told when it's ready." : null,
     canNegotiate: contract.status === "NEGOTIATION" && signatory.party === "SUPPLIER",
     canComment: ["NEGOTIATION", "PENDING_SIGNATURE"].includes(contract.status),
   });
@@ -96,6 +99,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
   // sign
   if (contract.status !== "PENDING_SIGNATURE") return NextResponse.json({ error: "This contract isn't open for signing" }, { status: 422 });
   if (signatory.status !== "PENDING") return NextResponse.json({ error: "You've already responded" }, { status: 422 });
+  if (vendorReadiness(contract.supplier, { allowPending: contract.type === "NDA" }).ready === false) return NextResponse.json({ error: "This agreement can't be signed yet — supplier onboarding hasn't been completed." }, { status: 422 });
   const version = await prisma.contractVersion.findUnique({ where: { contractId_versionNumber: { contractId: contract.id, versionNumber: contract.currentVersion } }, select: { body: true } });
   if (!version) return NextResponse.json({ error: "Contract text missing" }, { status: 500 });
 

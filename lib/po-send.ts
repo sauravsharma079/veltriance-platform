@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/audit";
 import { sendEmail } from "@/lib/email";
+import { vendorReadiness } from "@/lib/vendors";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -38,6 +39,12 @@ export async function sendPurchaseOrder(opts: {
   });
   if (!po || po.organizationId !== organizationId) return { error: "Not found", status: 404 };
   if (!isChangeOrder && po.status !== "DRAFT") return { error: "PO has already been sent", status: 422 };
+  // Never place an order with a vendor who hasn't finished onboarding and been approved. The PO stays
+  // a draft (auto-send after approval simply doesn't happen) until they're Active.
+  if (po.supplier) {
+    const ready = vendorReadiness(po.supplier);
+    if (ready.ready === false) return { error: ready.reason, status: 422 };
+  }
 
   const method = opts.method ?? po.routingMethod;
   const actorName = opts.actorName ?? "Procurement";

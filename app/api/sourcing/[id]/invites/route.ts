@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sourcingAccess } from "@/lib/sourcing-access";
 import { newSigningToken } from "@/lib/contracts";
+import { registerNewVendor } from "@/lib/vendors";
 
 // Suppliers can be added while drafting, or while open (to widen the field). Not once bidding has closed.
 const OPEN_FOR_INVITES = ["DRAFT", "OPEN"];
@@ -32,13 +33,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     name = sup.name; email = email ?? sup.contactEmail ?? undefined; contactName = contactName ?? sup.contactName ?? undefined;
   }
   if (!email) return NextResponse.json({ error: "This supplier has no contact email on file — add one" }, { status: 422 });
-  const dupe = await prisma.sourcingInvite.findFirst({ where: { eventId: id, OR: [{ email }, ...(supplierId ? [{ supplierId }] : [])] } });
+
+  // Someone who isn't on your supplier list yet is registered as a new vendor, so they go through
+  // onboarding — they can bid, but can't be contracted or ordered from until they're approved.
+  let newVendor = false;
+  let linkedSupplierId = supplierId ?? null;
+  if (!supplierId) {
+    const ev = await prisma.sourcingEvent.findFirst({ where: { id, organizationId: a.org.id }, select: { eventNumber: true, category: true } });
+    const v = await registerNewVendor({ organizationId: a.org.id, actor: a.profile, name: name!, email, contactName, category: ev?.category, source: `Sourcing ${ev?.eventNumber ?? ""}`.trim() });
+    if (v.supplier.status === "BLOCKED" || v.supplier.status === "INACTIVE") return NextResponse.json({ error: `${v.supplier.name} is ${v.supplier.status.toLowerCase()} and can't be invited` }, { status: 422 });
+    linkedSupplierId = v.supplier.id; name = v.supplier.name; newVendor = v.created;
+  }
+  const dupe = await prisma.sourcingInvite.findFirst({ where: { eventId: id, OR: [{ email }, ...(linkedSupplierId ? [{ supplierId: linkedSupplierId }] : [])] } });
   if (dupe) return NextResponse.json({ error: "That supplier is already invited" }, { status: 409 });
 
   // The link is issued when the event is published (or "Send link" is used), not here.
   const invite = await prisma.sourcingInvite.create({
-    data: { eventId: id, supplierId: supplierId ?? null, name: name!, contactName: contactName ?? null, email, tokenHash: newSigningToken().tokenHash },
+    data: { eventId: id, supplierId: linkedSupplierId, name: name!, contactName: contactName ?? null, email, tokenHash: newSigningToken().tokenHash },
     select: { id: true, name: true, email: true, status: true, supplierId: true },
   });
-  return NextResponse.json({ invite }, { status: 201 });
+  return NextResponse.json({ invite, newVendor }, { status: 201 });
 }

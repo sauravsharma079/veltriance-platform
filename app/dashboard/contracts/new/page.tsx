@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CONTRACT_TYPE_OPTIONS } from "@/lib/contract-ui";
 
-type Supplier = { id: string; name: string };
+type Supplier = { id: string; name: string; status?: string };
 const input = "w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white";
 
 export default function NewContractPage() {
@@ -11,6 +11,7 @@ export default function NewContractPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [f, setF] = useState({ title: "", type: "MSA", supplierId: "", description: "", value: "", currency: "INR", startDate: "", endDate: "", autoRenew: false, noticeDays: "60" });
   const [draftWithAi, setDraftWithAi] = useState(true);
+  const [nv, setNv] = useState({ name: "", email: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,10 +20,18 @@ export default function NewContractPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError(null);
+    // A vendor you don't have yet is registered first, so they enter supplier onboarding.
+    let supplierId = f.supplierId;
+    if (supplierId === "__new__") {
+      const r = await fetch("/api/suppliers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: nv.name, contactEmail: nv.email }) });
+      const sd = await r.json().catch(() => null);
+      if (!r.ok) { setError(sd?.error ?? "Could not add the new vendor"); setSaving(false); return; }
+      supplierId = sd.supplier.id;
+    }
     const res = await fetch("/api/contracts", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: f.title, type: f.type, supplierId: f.supplierId || null, description: f.description || null,
+        title: f.title, type: f.type, supplierId: supplierId || null, description: f.description || null,
         value: f.value ? Number(f.value) : null, currency: f.currency || "INR",
         startDate: f.startDate || null, endDate: f.endDate || null, autoRenew: f.autoRenew, noticeDays: Number(f.noticeDays) || 60,
       }),
@@ -42,8 +51,15 @@ export default function NewContractPage() {
         <label className="block"><span className="text-xs text-gray-500">Type</span>
           <select value={f.type} onChange={e => set("type", e.target.value)} className={input}>{CONTRACT_TYPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
         <label className="block"><span className="text-xs text-gray-500">Supplier</span>
-          <select value={f.supplierId} onChange={e => set("supplierId", e.target.value)} className={input}><option value="">— none yet —</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          <select value={f.supplierId} onChange={e => set("supplierId", e.target.value)} className={input}><option value="">— none yet —</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}{s.status && s.status !== "ACTIVE" ? " (onboarding)" : ""}</option>)}<option value="__new__">＋ New vendor…</option></select></label>
       </div>
+      {f.supplierId === "__new__" && (
+        <div className="grid grid-cols-2 gap-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <label className="block"><span className="text-xs text-gray-500">Vendor name</span><input required value={nv.name} onChange={e => setNv({ ...nv, name: e.target.value })} className={input} /></label>
+          <label className="block"><span className="text-xs text-gray-500">Vendor contact email</span><input required type="email" value={nv.email} onChange={e => setNv({ ...nv, email: e.target.value })} className={input} /></label>
+          <p className="col-span-2 text-xs text-amber-800">New vendors are added to your supplier list and go through supplier onboarding and approval. You can draft and negotiate now, but the contract can&apos;t be sent for signature until they&apos;re approved.</p>
+        </div>
+      )}
       <label className="block"><span className="text-xs text-gray-500">What is this for?</span><textarea rows={3} value={f.description} onChange={e => set("description", e.target.value)} className={input} placeholder="Scope, purpose and anything the drafting assistant should know" /></label>
       <div className="grid grid-cols-3 gap-4">
         <label className="block col-span-2"><span className="text-xs text-gray-500">Contract value</span><input type="number" min="0" step="0.01" value={f.value} onChange={e => set("value", e.target.value)} className={input} /></label>

@@ -10,7 +10,7 @@ type Item = { id?: string; description: string; quantity: number; unit: string |
 type Question = { id: string; text: string; required: boolean };
 type Line = { itemId: string; unitPrice: string; leadTimeDays: number | null };
 type Bid = { totalAmount: string; leadTimeDays: number | null; paymentTerms: string | null; validityDays: number | null; notes: string | null; revision: number; submittedAt: string; lines: Line[]; answers: Record<string, string> | null };
-type Invite = { id: string; name: string; email: string; status: string; supplierId: string | null; declineReason: string | null; supplier: { riskLevel: string | null; rating: number | null } | null; bid: Bid | null };
+type Invite = { id: string; name: string; email: string; status: string; supplierId: string | null; declineReason: string | null; supplier: { id?: string; status?: string; onboardingStage?: string | null; riskLevel: string | null; rating: number | null } | null; bid: Bid | null };
 type Score = { inviteId: string; score: number; rank: number; isLowest: boolean; priceScore: number };
 type Evaluation = { summary: string; recommendedInviteId: string; notes: { inviteId: string; note: string }[]; by: string };
 type EventT = { id: string; eventNumber: string; title: string; type: string; status: string; description: string | null; category: string | null; currency: string; deadline: string | null; requiredDate: string | null; deliveryLocation: string | null; terms: string | null; questions: Question[] | null; evaluation: Evaluation | null; owner: { name: string }; items: Item[]; invites: Invite[]; awardedInviteId: string | null; awardReason: string | null; awardedContractId: string | null; awardedPoId: string | null };
@@ -77,7 +77,7 @@ export default function SourcingEventPage() {
     items: form.items.filter(i => i.description.trim().length >= 2 && Number(i.quantity) > 0).map(i => ({ description: i.description, quantity: Number(i.quantity), unit: i.unit || null, specification: i.specification || null, targetPrice: i.targetPrice === "" || i.targetPrice == null ? null : Number(i.targetPrice) })),
   }, () => setInfo("Saved."));
 
-  const transition = (action: string, extra?: object) => call(action, `/api/sourcing/${id}/transition`, "POST", { action, ...extra }, d => { if (d.invites?.length) { setLinks(d.invites); setTab("Suppliers"); } });
+  const transition = (action: string, extra?: object) => call(action, `/api/sourcing/${id}/transition`, "POST", { action, ...extra }, d => { if (d.invites?.length) { setLinks(d.invites); setTab("Suppliers"); } if (d.warnings?.length) setInfo(`Awarded. Note: ${d.warnings.join(" ")}`); });
 
   async function runAgent(key: string, instruction?: string) {
     setBusy(`ai-${key}`); setError(null); setInfo(null);
@@ -137,6 +137,9 @@ export default function SourcingEventPage() {
         {ev.status === "AWARDED" && !ev.awardedPoId && <button disabled={!!busy} onClick={() => call("po", `/api/sourcing/${id}/create-po`, "POST", undefined, d => { window.location.assign(`/dashboard/purchase-orders/${d.purchaseOrder.id}`); })} className={ghost}>Create purchase order</button>}
         {ev.status === "AWARDED" && ev.awardedPoId && <Link href={`/dashboard/purchase-orders/${ev.awardedPoId}`} className={ghost}>Open the purchase order</Link>}
       </div>
+
+      {ev.status === "AWARDED" && (() => { const w = ev.invites.find(i => i.id === ev.awardedInviteId); return w?.supplier && w.supplier.status !== "ACTIVE" ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs px-4 py-3 rounded-xl"><strong>{w.name}</strong> is a new vendor and hasn&apos;t completed supplier onboarding ({(w.supplier.onboardingStage ?? "registration").toLowerCase().replace(/_/g, " ")}). You can draft the contract, but it can&apos;t be signed and no purchase order can be placed until they&apos;re approved. <Link href={`/dashboard/suppliers/${w.supplier.id}`} className="underline">Open their onboarding</Link>.</div>) : null; })()}
 
       {links.length > 0 && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-2">
@@ -241,7 +244,7 @@ export default function SourcingEventPage() {
             {ev.invites.length === 0 && <p className="p-6 text-center text-sm text-gray-400">No suppliers invited yet.</p>}
             {ev.invites.map(i => (
               <div key={i.id} className="p-4 flex items-start justify-between gap-3">
-                <div className="min-w-0"><p className="text-sm font-medium text-gray-900">{i.name}{i.supplier?.riskLevel && <span className="ml-2 text-[10px] text-gray-400">risk {i.supplier.riskLevel.toLowerCase()}</span>}</p>
+                <div className="min-w-0"><p className="text-sm font-medium text-gray-900">{i.name}{i.supplier?.riskLevel && <span className="ml-2 text-[10px] text-gray-400">risk {i.supplier.riskLevel.toLowerCase()}</span>}{i.supplier && i.supplier.status !== "ACTIVE" && <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700" title="New vendor — must finish supplier onboarding before a contract can be signed or an order placed">new vendor · onboarding</span>}</p>
                   <p className="text-xs text-gray-400">{i.email}</p>
                   {i.declineReason && <p className="text-xs text-red-600 mt-1">Declined: {i.declineReason}</p>}</div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -258,8 +261,8 @@ export default function SourcingEventPage() {
                 <button disabled={!pick || !!busy} onClick={() => call("addsup", `/api/sourcing/${id}/invites`, "POST", { supplierId: pick }, () => setPick(""))} className={primary}>Add</button></div>
               <div className="flex gap-2 items-end"><label className="flex-1 text-xs text-gray-500">Or a new supplier — name<input value={ext.name} onChange={e => setExt({ ...ext, name: e.target.value })} className={input} /></label>
                 <label className="flex-1 text-xs text-gray-500">Email<input type="email" value={ext.email} onChange={e => setExt({ ...ext, email: e.target.value })} className={input} /></label>
-                <button disabled={!ext.name || !ext.email || !!busy} onClick={() => call("addext", `/api/sourcing/${id}/invites`, "POST", ext, () => setExt({ name: "", email: "" }))} className={primary}>Add</button></div>
-              <p className="text-[11px] text-gray-400">A supplier that isn&apos;t in your list can bid, but must be added under Suppliers before you can raise a purchase order to them.</p>
+                <button disabled={!ext.name || !ext.email || !!busy} onClick={() => call("addext", `/api/sourcing/${id}/invites`, "POST", ext, d => { setExt({ name: "", email: "" }); if (d.newVendor) setInfo("Added — and registered as a new vendor in your supplier list. They can bid now, but must complete supplier onboarding before you can contract or order from them."); })} className={primary}>Add</button></div>
+              <p className="text-[11px] text-gray-400">A vendor who isn&apos;t in your supplier list is registered automatically as a new supplier and goes through onboarding. They can bid, but nothing can be signed or ordered until they&apos;re approved.</p>
             </div>
           )}
         </div>

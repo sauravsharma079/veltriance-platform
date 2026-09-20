@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
         // tokenHash is never selected: it's the credential behind a supplier's bid link.
         select: {
           id: true, name: true, contactName: true, email: true, status: true, invitedAt: true, viewedAt: true, declineReason: true, supplierId: true,
-          supplier: { select: { id: true, name: true, riskLevel: true, riskScore: true, rating: true, status: true } },
+          supplier: { select: { id: true, name: true, riskLevel: true, riskScore: true, rating: true, status: true, onboardingStage: true } },
           bid: { include: { lines: true } },
         },
         orderBy: { createdAt: "asc" },
