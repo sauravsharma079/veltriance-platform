@@ -12,6 +12,7 @@ type Comment = { id: string; authorType: string; authorName: string; body: strin
 type Ver = { versionNumber: number; changeNote: string | null; source: string; createdByName: string | null; createdAt: string };
 type Contract = { id: string; contractNumber: string; title: string; type: string; status: string; description: string | null; value: string | null; currency: string; startDate: string | null; endDate: string | null; autoRenew: boolean; noticeDays: number; currentVersion: number; ownerId: string; owner: { id: string; name: string }; supplier: { id: string; name: string; contactEmail: string | null; contactName: string | null } | null; signatories: Sig[]; comments: Comment[]; versions: Ver[]; approvedAt: string | null; publishedAt: string | null; terminationReason: string | null };
 type Proposal = { id: string; tool: string; input: { body?: string; changeNote?: string; message?: string; internal?: boolean }; rationale: string | null; createdAt: string };
+type Approval = { meId: string; meRole: string; canApprove: boolean; selfApproval: boolean; reason: string | null; eligible: { id: string; name: string; role: string }[]; designatedName: string | null };
 type Invite = { signatoryId: string; name: string; email: string; party: string; link: string; emailed: boolean; emailNote?: string };
 
 const TABS = ["Document", "Negotiation", "Signatures", "Details"] as const;
@@ -27,6 +28,9 @@ export default function ContractPage() {
   const [c, setC] = useState<Contract | null>(null);
   const [bodies, setBodies] = useState<Record<string, string>>({});
   const [meId, setMeId] = useState<string | null>(null);
+  const [approval, setApproval] = useState<Approval | null>(null);
+  const [choosing, setChoosing] = useState(false);
+  const [approverPick, setApproverPick] = useState("");
   const [tab, setTab] = useState<(typeof TABS)[number]>("Document");
   const [draft, setDraft] = useState("");
   const [note, setNote] = useState("");
@@ -46,7 +50,7 @@ export default function ContractPage() {
     const res = await fetch(`/api/contracts/${id}`);
     if (!res.ok) { setError((await res.json().catch(() => null))?.error ?? "Could not load the contract"); return; }
     const d = await res.json();
-    setC(d.contract); setBodies(d.bodies);
+    setC(d.contract); setBodies(d.bodies); setApproval(d.approval ?? null);
     // The assistant's pending proposals for this contract (only visible if Agents is licensed).
     fetch(`/api/agents/actions?contractId=${id}`).then(r => r.ok ? r.json() : { actions: [] }).then(a => setProposals(a.actions ?? [])).catch(() => {});
     setDraft(prev => (prev === "" || prev === bodiesRef.current[d.contract.currentVersion]) ? (d.bodies[d.contract.currentVersion] ?? "") : prev);
@@ -72,7 +76,14 @@ export default function ContractPage() {
   }
 
   const saveVersion = () => call("save", `/api/contracts/${id}/versions`, "POST", { body: draft, changeNote: note || undefined }, () => { setNote(""); setInfo("Saved as a new version."); });
-  const transition = (action: string, reason?: string) => call(action, `/api/contracts/${id}/transition`, "POST", { action, reason }, d => { if (d.invites?.length) { setInvites(d.invites); setTab("Signatures"); } });
+  const transition = (action: string, reason?: string, approverId?: string) => call(action, `/api/contracts/${id}/transition`, "POST", { action, reason, approverId }, d => {
+    if (d.invites?.length) { setInvites(d.invites); setTab("Signatures"); }
+    if (action === "submit") {
+      setChoosing(false);
+      setInfo(d.notified ? `Sent for approval to ${d.notified.names.join(", ")}${d.notified.emailed < d.notified.names.length ? ` — but the email couldn't be delivered${d.notified.note ? ` (${d.notified.note})` : ""}; they'll still see it in their notifications` : " — they've been emailed and it's in their notifications"}.` : "Submitted. As the only Admin you can approve it yourself; it will be recorded in the audit trail.");
+    }
+    if (action === "approve" && d.selfApproval) setInfo("Approved. Because nobody else was available, this is recorded as a self-approval in the audit trail.");
+  });
   const ask = (reason: string) => { const r = prompt(reason); return r?.trim() || null; };
 
   async function decideProposal(pid: string, decision: "approve" | "reject") {
@@ -144,14 +155,43 @@ export default function ContractPage() {
       {/* Lifecycle actions */}
       <div className="flex flex-wrap gap-2">
         {c.status === "DRAFT" && <button disabled={!!busy} onClick={() => transition("share")} className={ghost}>Share with supplier</button>}
-        {["DRAFT", "NEGOTIATION"].includes(c.status) && <button disabled={!!busy || dirty} title={dirty ? "Save your changes first" : undefined} onClick={() => transition("submit")} className={primary}>Submit for approval</button>}
-        {c.status === "PENDING_APPROVAL" && (isOwner
-          ? <span className="text-xs text-gray-400 self-center">You own this contract — someone else must approve it.</span>
-          : <button disabled={!!busy} onClick={() => transition("approve")} className={primary}>Approve &amp; send for signature</button>)}
+        {["DRAFT", "NEGOTIATION"].includes(c.status) && <button disabled={!!busy || dirty} title={dirty ? "Save your changes first" : undefined} onClick={() => setChoosing(x => !x)} className={primary}>Submit for approval</button>}
+        {c.status === "PENDING_APPROVAL" && (approval?.canApprove
+          ? <button disabled={!!busy} onClick={() => transition("approve")} className={primary}>{approval.selfApproval ? "Approve (self-approval)" : "Approve"} &amp; send for signature</button>
+          : <span className="text-xs text-gray-400 self-center">{approval?.reason ?? (isOwner ? "You own this contract — someone else must approve it." : "This contract is waiting on someone else.")}</span>)}
         {c.status === "PENDING_APPROVAL" && <button disabled={!!busy} onClick={() => { const r = ask("Why are you sending it back?"); if (r) transition("return", r); }} className={ghost}>Return for changes</button>}
         {["DRAFT", "NEGOTIATION", "PENDING_APPROVAL", "PENDING_SIGNATURE"].includes(c.status) && <button disabled={!!busy} onClick={() => confirm("Cancel this contract?") && transition("cancel")} className={ghost}>Cancel</button>}
         {c.status === "ACTIVE" && <button disabled={!!busy} onClick={() => { const r = ask("Reason for terminating"); if (r) transition("terminate", r); }} className={ghost}>Terminate</button>}
       </div>
+
+      {choosing && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 max-w-xl">
+          <p className="text-sm font-medium text-gray-900">Who should approve this contract?</p>
+          {approval && approval.eligible.length > 0 ? (
+            <>
+              <select value={approverPick} onChange={e => setApproverPick(e.target.value)} className={input}>
+                <option value="">Anyone who can approve ({approval.eligible.length})</option>
+                {approval.eligible.map(u => <option key={u.id} value={u.id}>{u.name} — {u.role.toLowerCase()}</option>)}
+              </select>
+              <p className="text-xs text-gray-400">They&apos;ll get an email and a notification in the app.</p>
+            </>
+          ) : approval?.meRole === "ADMIN" && isOwner ? (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">Nobody else can approve yet — approvers must be Admin, Procurement or Approver users who have accepted their invitation. You can still submit and approve it yourself as the Admin; it will be recorded as a self-approval. For proper separation of duties, invite another approver first.</p>
+          ) : (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">Nobody else can approve this yet. Ask an Admin to invite an Admin, Procurement or Approver user first (they need to have accepted their invitation).</p>
+          )}
+          <div className="flex gap-2">
+            <button disabled={!!busy || !(approval && (approval.eligible.length > 0 || (approval.meRole === "ADMIN" && isOwner)))} onClick={() => transition("submit", undefined, approverPick || undefined)} className={primary}>{busy === "submit" ? "Sending…" : "Submit for approval"}</button>
+            <button onClick={() => setChoosing(false)} className={ghost}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {c.status === "PENDING_APPROVAL" && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs px-4 py-3 rounded-xl">
+          Waiting for approval from {approval?.designatedName ?? (approval && approval.eligible.length > 0 ? `any of: ${approval.eligible.map(e => e.name).join(", ")}` : "an approver — but none is available yet")}.
+        </div>
+      )}
 
       {/* Links returned by share / approve — the only time they're shown */}
       {invites.length > 0 && (

@@ -1097,6 +1097,7 @@ model Contract {
   autoRenew         Boolean        @default(false)
   noticeDays        Int            @default(60)
   currentVersion    Int            @default(1)
+  approverId        String?        // who was asked to approve (null = any eligible approver)
   approvedById      String?
   approvedAt        DateTime?
   publishedAt       DateTime?

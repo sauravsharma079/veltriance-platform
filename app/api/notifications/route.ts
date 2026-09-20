@@ -81,7 +81,21 @@ export async function GET() {
     }
   }
 
+  // Contracts waiting on this person: named as the approver, or (if none was named) any eligible approver.
+  const contractApprovals: Notification[] = [];
+  if (["ADMIN", "PROCUREMENT", "APPROVER"].includes(profile.role) && hasModule(organization, "CONTRACTS")) {
+    const waiting = await prisma.contract.findMany({
+      where: { organizationId: orgId, status: "PENDING_APPROVAL", ownerId: { not: profile.id }, OR: [{ approverId: profile.id }, { approverId: null }] },
+      select: { id: true, title: true, contractNumber: true, updatedAt: true }, orderBy: { updatedAt: "asc" }, take: 20,
+    });
+    for (const c of waiting) contractApprovals.push({
+      id: `contract-approval-${c.id}`, type: "contract_approval", title: "Contract awaiting your approval",
+      body: `${c.contractNumber} — ${c.title}`, href: `/dashboard/contracts/${c.id}`, urgent: true, createdAt: c.updatedAt.toISOString(),
+    });
+  }
+
   const notifications: Notification[] = [
+    ...contractApprovals,
     ...contractAlerts,
     ...pendingSteps.map(s => ({
       id: `approval-${s.id}`,

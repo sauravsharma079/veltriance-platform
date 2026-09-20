@@ -5,7 +5,7 @@ import { getMemberOrganization } from "@/lib/tenant";
 import { moduleGuard } from "@/lib/licensing";
 
 /** Signed in, member of this workspace, PROCUREMENT or ADMIN, and the org holds the CONTRACTS module. */
-export async function contractAccess() {
+export async function contractAccess(opts: { allowApprover?: boolean } = {}) {
   const sb = await createClient();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -13,7 +13,9 @@ export async function contractAccess() {
   if (!org) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   const profile = await prisma.user.findFirst({ where: { authId: user.id, organizationId: org.id }, select: { id: true, name: true, email: true, role: true } });
   if (!profile) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
-  if (profile.role !== "ADMIN" && profile.role !== "PROCUREMENT") return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  // Approvers can only reach the few endpoints that opt in (reviewing and deciding on a contract).
+  const allowed = profile.role === "ADMIN" || profile.role === "PROCUREMENT" || (opts.allowApprover && profile.role === "APPROVER");
+  if (!allowed) return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   const blocked = moduleGuard(org, "CONTRACTS");
   if (blocked) return { error: blocked };
   return { org, profile };

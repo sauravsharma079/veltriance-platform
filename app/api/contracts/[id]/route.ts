@@ -4,11 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { contractAccess } from "@/lib/contracts-access";
 import { CONTRACT_TYPES, EDITABLE } from "@/lib/contracts";
+import { approvalVerdict, eligibleApprovers } from "@/lib/contract-approval";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, ctx: Ctx) {
-  const a = await contractAccess();
+  const a = await contractAccess({ allowApprover: true });
   if ("error" in a) return a.error;
   const { id } = await ctx.params;
   const contract = await prisma.contract.findFirst({
@@ -23,10 +24,24 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     },
   });
   if (!contract) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // An Approver only sees a contract that has been put to them.
+  if (a.profile.role === "APPROVER" && (contract.status !== "PENDING_APPROVAL" || (contract.approverId && contract.approverId !== a.profile.id)))
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Text for the latest few versions (current + what to diff against); older ones on request.
   const wanted = contract.versions.slice(0, 5).map(v => v.versionNumber);
   const bodies = await prisma.contractVersion.findMany({ where: { contractId: id, versionNumber: { in: wanted } }, select: { versionNumber: true, body: true } });
-  return NextResponse.json({ contract, bodies: Object.fromEntries(bodies.map(b => [b.versionNumber, b.body])) });
+  // What the person looking at this can do about approval, so the page can explain rather than guess.
+  const eligible = await eligibleApprovers(a.org.id, contract.ownerId);
+  const verdict = await approvalVerdict({ organizationId: a.org.id, ownerId: contract.ownerId, approver: a.profile });
+  const designated = contract.approverId ? eligible.find(e => e.id === contract.approverId)?.name ?? null : null;
+  const approval = {
+    meId: a.profile.id, meRole: a.profile.role,
+    canApprove: verdict.allowed && (!contract.approverId || contract.approverId === a.profile.id || a.profile.role === "ADMIN"),
+    selfApproval: verdict.allowed ? verdict.selfApproval : false,
+    reason: verdict.allowed === false ? verdict.reason : null,
+    eligible: eligible.map(e => ({ id: e.id, name: e.name, role: e.role })), designatedName: designated,
+  };
+  return NextResponse.json({ contract, approval, bodies: Object.fromEntries(bodies.map(b => [b.versionNumber, b.body])) });
 }
 
 const patchSchema = z.object({
