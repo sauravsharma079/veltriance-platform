@@ -14,7 +14,8 @@ export async function PATCH(req: NextRequest, { params }: P) {
   const e = await prisma.purchaseOrder.findFirst({ where:{id,organizationId:a.ctx.organizationId} });
   if (!e) return apiErr("Not found", 404);
   let b: Record<string,unknown>; try { b = await req.json(); } catch { return apiErr("Invalid JSON", 400); }
-  const T: Record<string,string[]> = { DRAFT:["SENT","CANCELLED"], SENT:["ACKNOWLEDGED","CANCELLED"], ACKNOWLEDGED:["PARTIALLY_RECEIVED","RECEIVED","CANCELLED"], PARTIALLY_RECEIVED:["RECEIVED","CANCELLED"], RECEIVED:["CLOSED"] };
+  const T: Record<string,string[]> = { DRAFT:["SENT","CANCELLED"], SENT:["ACKNOWLEDGED","CANCELLED"], ACKNOWLEDGED:["CANCELLED"], PARTIALLY_RECEIVED:["CANCELLED"], RECEIVED:["CLOSED"] };
+  // Receiving is never a status flip: it comes from a goods receipt, which is what the three-way invoice match checks.
   const u: Record<string,unknown> = {};
   if (b.status) { const al = T[e.status]??[]; if (!al.includes(b.status as string)) return apiErr(`Cannot transition ${e.status}→${b.status}. Allowed: ${al.join(", ")}`,422); u.status=b.status; if(b.status==="SENT") u.issuedAt=new Date(); if(b.status==="ACKNOWLEDGED") u.acknowledgedAt=new Date(); }
   if (b.supplier_email) u.supplierEmail=b.supplier_email; if (b.notes) u.notes=b.notes; if (b.payment_terms) u.paymentTerms=b.payment_terms;

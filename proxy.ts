@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { rateLimit, limitFor } from "@/lib/rate-limit";
 
 // The workspace shown when a request doesn't map to any tenant subdomain — the
 // bare root domain, local dev, and Vercel's own preview URL all land here so
@@ -35,6 +36,12 @@ function resolveSlug(hostname: string): string {
 }
 
 export async function proxy(req: NextRequest) {
+  const rule = limitFor(req.nextUrl.pathname, req.method);
+  if (rule) {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+    const r = rateLimit(`${rule.name}:${ip}`, rule.limit, rule.windowMs);
+    if (!r.ok) return NextResponse.json({ error: "Too many requests — please wait a moment and try again." }, { status: 429, headers: { "Retry-After": String(r.retryAfterSec) } });
+  }
   let response = NextResponse.next({ request: req });
 
   const supabase = createServerClient(

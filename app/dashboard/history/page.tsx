@@ -94,9 +94,12 @@ export default function HistoryPage() {
           <h1 className="text-lg font-bold text-gray-900">Activity History</h1>
           <p className="text-xs text-gray-400 mt-0.5">Complete audit trail of all platform actions</p>
         </div>
+        <div className="flex items-center">
+        <a href="/api/audit/export" className="text-xs text-gray-500 border border-gray-200 px-3 py-2 rounded-xl hover:bg-gray-50 mr-2">Export CSV</a>
         <button onClick={load} className="flex items-center gap-1.5 text-xs text-gray-500 border border-gray-200 px-3 py-2 rounded-xl hover:bg-gray-50">
           <RefreshCw className="size-3"/>Refresh
         </button>
+        </div>
       </div>
 
       <div className="px-8 py-6">

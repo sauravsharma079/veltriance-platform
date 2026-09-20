@@ -61,7 +61,7 @@ competitor column as a directional checklist, not a verified feature matrix.
 |---|---|---|
 | 1 | **Touchless approvals** — *done* | The biggest hole in the core flow: nobody was told about an approval. |
 | 2 | **Budgets + policy engine + orchestrator** — *done* | Turns separate modules into one autonomous chain and adds the controls finance asks for first. |
-| 3 | **Quality and security gate** — tests, CI, rate limiting, headers, SSO/MFA, field encryption, audit export | Required before any enterprise security review. Also protects everything built since. |
+| 3 | **Quality and security gate** — *part done: tests, CI, rate limiting, headers, audit export; SSO/MFA and field encryption still open* | Required before any enterprise security review. Also protects everything built since. |
 | 4 | **Email intake, then Slack/Teams** | Adoption: requesters stay where they already work. |
 | 5 | **Analytics and savings** | What executives buy on; needs the data from tranche 2. |
 | 6 | **Integrations** — webhooks, ERP/accounting connectors, HRIS, supplier invoice portal, OCR | Largest effort; depends on customer stack. |
