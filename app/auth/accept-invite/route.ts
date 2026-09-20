@@ -32,8 +32,8 @@ export async function GET(request: NextRequest) {
     if (stub && (!stub.authId || stub.authId.startsWith("pending_"))) {
       await prisma.user.update({ where: { id: stub.id }, data: { authId: data.user.id, inviteToken: null, inviteStatus: "ACTIVE", onboardingComplete: false } });
       // Same host: the session cookie was just set here, so this is where they stay signed in.
-      // ?invited=1 makes onboarding ask them to choose a password, which invited users don't have yet.
-      return NextResponse.redirect(`${origin}/onboarding?invited=1`);
+      // Invited users have no password yet, so they choose one first, then complete their profile.
+      return NextResponse.redirect(`${origin}/auth/set-password?next=/onboarding`);
     }
   }
   return NextResponse.redirect(`${origin}/dashboard`);

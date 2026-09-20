@@ -11,7 +11,7 @@ export type InviteOutcome = { emailed: boolean; link: string; emailNote?: string
  * it creates is tied to that host. Vercel's internal *.vercel.app address isn't one a user
  * should ever be sent to, so that (and only that) is swapped for the public domain.
  */
-function inviteOrigin(origin: string): string {
+export function workspaceOrigin(origin: string): string {
   return /\.vercel\.app(:\d+)?$/.test(new URL(origin).host) ? publicBaseUrl() : origin.replace(/\/$/, "");
 }
 
@@ -47,7 +47,7 @@ export async function sendUserInvite(opts: {
   const hashed = res.data?.properties?.hashed_token;
   if (res.error || !hashed) throw new Error(res.error?.message ?? "Could not create the invitation link");
 
-  const link = `${inviteOrigin(opts.origin)}/auth/accept-invite?token_hash=${encodeURIComponent(hashed)}&type=${type}&token=${inviteToken}`;
+  const link = `${workspaceOrigin(opts.origin)}/auth/accept-invite?token_hash=${encodeURIComponent(hashed)}&type=${type}&token=${inviteToken}`;
   const sent = await sendEmail({
     to: opts.user.email,
     subject: `${opts.invitedBy} invited you to ${opts.organization.name} on Veltriance`,

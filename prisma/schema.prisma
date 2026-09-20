@@ -94,6 +94,7 @@ model User {
   phone              String?
   jobTitle           String?
   inviteStatus       String?      @default("ACTIVE")
+  passwordResetSentAt DateTime?   // throttles "forgot password" emails
   currency           String       @default("USD")
   role               Role         @default(REQUESTOR)
   managerId          String?
