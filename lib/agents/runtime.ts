@@ -56,6 +56,8 @@ export type AgentDef = {
    * sometimes announce the work as done without doing it.
    */
   requireWriteBeforeFinish?: boolean;
+  /** Overrides the default time budget for agents that generate long documents. */
+  timeBudgetMs?: number;
 };
 
 type Step = { thought: string; tool?: string; input?: unknown; result?: unknown; finished?: boolean };
@@ -127,7 +129,7 @@ export async function runAgent(def: AgentDef, org: { id: string; agentAutonomy: 
     const messages: { role: "user" | "assistant"; content: string }[] = [{ role: "user", content: def.kickoff(opts.input) }];
 
     for (let i = 0; i < def.maxSteps; i++) {
-      if (Date.now() - started > TIME_BUDGET_MS) { summary = "Stopped early: time budget reached."; break; }
+      if (Date.now() - started > (def.timeBudgetMs ?? TIME_BUDGET_MS)) { summary = "Stopped early: time budget reached."; break; }
 
       const step = await llmJson({ system, messages, schema: stepSchema, maxTokens: def.maxOutputTokens });
       llmCalls++;

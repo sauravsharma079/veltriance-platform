@@ -6,7 +6,8 @@ import { llmConfigured } from "@/lib/agents/llm";
 import { hasModule } from "@/lib/licensing";
 import { errorMessage } from "@/lib/errors";
 
-export const maxDuration = 60;
+// Contract drafting can take a couple of minutes on a free-tier model.
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ key: string }> }) {
   const a = await agentAccess();

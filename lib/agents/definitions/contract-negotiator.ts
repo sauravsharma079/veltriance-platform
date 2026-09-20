@@ -50,7 +50,7 @@ const listPlaybook = defineTool({
   },
 });
 
-const execSchema = z.object({ contractId: z.string().min(1), body: z.string().min(50).max(60_000), changeNote: z.string().min(5).max(300) });
+const execSchema = z.object({ contractId: z.string().min(1), body: z.string().min(50).max(60_000), changeNote: z.string().min(5).max(300), guidance: z.string().max(2500).optional() });
 
 const proposeRevision = defineTool({
   name: "propose_revision",
@@ -79,6 +79,7 @@ const proposeRevision = defineTool({
     const body = await llmText({
       maxTokens: 6000,
       system: `You are a careful commercial contracts drafter. Output ONLY the complete contract text, ready to save: plain text with numbered clauses and short headings, no markdown fences, no preamble, no commentary.
+Be thorough: a real agreement for this type of contract, typically 1,500–3,000 words (an NDA can be shorter), with parties, definitions, scope, term and termination, fees and payment, confidentiality, IP, warranties, liability, data protection, dispute resolution, governing law and signature blocks as appropriate.
 Rules: use the organisation's standard clause wording where provided; never invent commercial facts (prices, dates, quantities, legal names, addresses) — use bracketed placeholders like [SUPPLIER LEGAL ADDRESS] for anything not supplied; when revising, change only what the instructions require and keep every other clause exactly as it is.`,
       user: `CONTRACT DETAILS
 Title: ${c.title}
@@ -101,10 +102,19 @@ ${input.guidance}
 Now write the complete contract text.`,
     });
     if (body.length < 200) throw new Error("The generated contract was too short to use");
-    return { contractId: c.id, body, changeNote: input.changeNote };
+    return { contractId: c.id, body, changeNote: input.changeNote, guidance: input.guidance };
   },
   async run(ctx, input) {
     const v = await createVersion({ contractId: input.contractId, organizationId: ctx.organizationId, body: input.body, changeNote: input.changeNote, source: "AGENT", by: { name: AGENT_NAME } });
+    // The legal-review warning and the reasoning are recorded here, deterministically, so they
+    // exist whatever the model does next (it can run out of time before writing its own note).
+    const placeholders = Array.from(new Set(input.body.match(/\[[A-Z][A-Z0-9 _/&-]{2,60}\]/g) ?? [])).slice(0, 15);
+    await prisma.contractComment.create({
+      data: {
+        contractId: input.contractId, authorType: "AGENT", authorName: AGENT_NAME, internal: true, versionNumber: v.versionNumber,
+        body: `Version ${v.versionNumber} was prepared by the assistant: ${input.changeNote}.${input.guidance ? `\n\nChanges requested: ${input.guidance}` : ""}${placeholders.length ? `\n\nOpen placeholders to fill in: ${placeholders.join(", ")}.` : ""}\n\nThis is not legal advice — have counsel review it before it is shared or signed.`,
+      },
+    });
     return { versionNumber: v.versionNumber };
   },
 });
@@ -131,6 +141,7 @@ export const contractNegotiator: AgentDef = {
   schedule: null,
   maxSteps: 8,
   requireWriteBeforeFinish: true,
+  timeBudgetMs: 150_000, // writing a whole contract takes a while, especially on free tiers
   inputSchema: z.object({ contractId: z.string().min(1), instruction: z.string().max(1000).optional() }),
   instructions: `You help procurement teams draft and negotiate contracts. Work from the contract and the organisation's clause playbook.
 

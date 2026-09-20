@@ -42,6 +42,27 @@ function retryAfterSeconds(message: string): number | null {
 
 type Msg = { role: "user" | "assistant"; content: string };
 
+/**
+ * Gemini model names get retired for new accounts without much notice (2.0, then 2.5, both
+ * did). A pinned model is fast and predictable, so it's tried first; if Google says it's gone
+ * (404) we fall back to the always-current alias, which is slower but never retired.
+ * Override the pinned one with GEMINI_MODEL.
+ */
+const GEMINI_MODELS = () => Array.from(new Set([process.env.GEMINI_MODEL || "gemini-3.6-flash", "gemini-flash-latest"]));
+
+async function geminiGenerate(body: unknown, signal: AbortSignal): Promise<Response> {
+  let res!: Response;
+  for (const model of GEMINI_MODELS()) {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
+      body: JSON.stringify(body), signal,
+    });
+    if (res.status !== 404) return res;
+    console.warn(`[llm] Gemini model ${model} not available (404) — trying the next one`);
+  }
+  return res;
+}
+
 async function callProvider(provider: LlmProvider, system: string, messages: Msg[], maxTokens: number, strictJson = true): Promise<string> {
   const timeout = AbortSignal.timeout(30_000);
 
@@ -71,17 +92,11 @@ async function callProvider(provider: LlmProvider, system: string, messages: Msg
   }
 
   if (provider === "gemini") {
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
-        generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens, responseMimeType: "application/json" },
-      }),
-      signal: timeout,
-    });
+    const res = await geminiGenerate({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: messages.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+      generationConfig: { temperature: 0.1, maxOutputTokens: Math.max(maxTokens, 8192), responseMimeType: "application/json" },
+    }, timeout);
     if (!res.ok) throw new LlmError(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
     return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   }
@@ -230,11 +245,10 @@ async function callProviderText(provider: LlmProvider, system: string, user: str
     return json?.choices?.[0]?.message?.content ?? "";
   }
   if (provider === "gemini") {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent`, {
-      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY! },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }], generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens } }),
-      signal: timeout,
-    });
+    const res = await geminiGenerate({
+      systemInstruction: { parts: [{ text: system }] }, contents: [{ role: "user", parts: [{ text: user }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: Math.max(maxTokens, 16000) },
+    }, timeout);
     if (!res.ok) throw new LlmError(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`, res.status);
     return (await res.json())?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   }
